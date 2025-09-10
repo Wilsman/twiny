@@ -1,0 +1,496 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arena Shooter â€” Streamer</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Arena Shooter</div>
+    <div class="middle-controls">
+      <span class="badge" id="status" data-state="disconnected">disconnected</span>
+    </div>
+    <div class="right-controls">
+      <button id="fullscreen">Fullscreen</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="main">
+      <div class="stage"></div>
+    </div>
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">Session</div>
+        <div class="row">
+          <button id="newRoom">Create Room</button>
+          <button id="toggleChat" disabled>Disable Chat</button>
+        </div>
+        <div class="row">
+          <input id="roomLink" class="mono" placeholder="Join link" readonly />
+          <button id="copy" disabled>Copy Link</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Weapons</div>
+        <div class="row">
+          <button class="weapon" data-weapon="pistol">Pistol (1)</button>
+          <button class="weapon" data-weapon="smg">SMG (2)</button>
+          <button class="weapon" data-weapon="shotgun">Shotgun (3)</button>
+        </div>
+        <div class="tip">Right-click or Q to swing bat.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Stats</div>
+        <div class="row">
+          <span class="badge">Score: <span id="score">0</span></span>
+          <span class="badge">HP: <span id="hp">100</span></span>
+          <span class="badge">Weapon: <span id="weapon">pistol</span></span>
+          <span class="badge">Ammo: <span id="ammo">0</span></span>
+          <span class="badge" id="timer">Time: --</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Players</div>
+        <div class="pill-list" id="players"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Chat</div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="row"><input id="chatInput" placeholder="Chat..." /></div>
+      </div>
+    </aside>
+  </div>
+  <div class="hit-flash" id="flash"></div>
+
+  <script type="module">
+    import { connect, nameStorage, minimalCanvas, inputController, suppressPageHotkeys, toast } from '/common.js';
+
+    const create = async () => {
+      const res = await fetch('/create', { method:'POST' });
+      const { roomId } = await res.json();
+      return roomId;
+    };
+
+    const { c, ctx } = minimalCanvas(960, 540);
+    document.querySelector('.stage').appendChild(c);
+    suppressPageHotkeys();
+    const input = inputController();
+
+    let ws, roomId, playerId, arena={w:960,h:540};
+    let state = { players:[], bullets:[], arena, remainingTime: 0 };
+    let lastHp = 100;
+    let lastStateTime = performance.now();
+    let lastScore = 0;
+    const effects = []; // bullet impacts etc {x,y,ttl}
+    let prevBulletPos = new Map();
+    // Local melee feedback (client-side prediction so streamer sees instantly)
+    let localMeleeAt = 0; let localMeleeDirX = 1; let localMeleeDirY = 0; let prevMelee = false;
+
+    const link = document.getElementById('roomLink');
+    const status = document.getElementById('status');
+    const scoreEl = document.getElementById('score');
+    const hpEl = document.getElementById('hp');
+    const ammoEl = document.getElementById('ammo');
+    const weaponEl = document.getElementById('weapon');
+    const playersEl = document.getElementById('players');
+    const flashEl = document.getElementById('flash');
+    const newBtn = document.getElementById('newRoom');
+    const copyBtn = document.getElementById('copy');
+    const timerEl = document.getElementById('timer');
+    const chatMessagesEl = document.getElementById('chatMessages');
+    const chatInput = document.getElementById('chatInput');
+    const toggleChatBtn = document.getElementById('toggleChat');
+    copyBtn.disabled = true;
+
+    let inputIv = null;
+    let sendNeutralHandler = null;
+    let visHandler = null;
+
+    async function boot() {
+      if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+      roomId = await create();
+      const url = `${location.origin}/join.html?room=${roomId}`;
+      link.value = url;
+      copyBtn.disabled = false;
+      copyBtn.onclick = () => { navigator.clipboard.writeText(url); toast('Join link copied'); copyBtn.textContent = 'Copied!'; setTimeout(()=>copyBtn.textContent='Copy Link',800); };
+
+      ws = connect(roomId);
+      ws.addEventListener('open', () => {
+        status.textContent = 'connected';
+        status.dataset.state = 'connected';
+        document.body.classList.add('connected');
+        const name = nameStorage().get() || 'Marine';
+        ws.send(JSON.stringify({ type:'join_room', role:'streamer', name }));
+        newBtn.textContent = 'End Session';
+        toggleChatBtn.disabled = false;
+      });
+      ws.addEventListener('message', (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'joined') { playerId = msg.playerId; arena = msg.arena; }
+        if (msg.type === 'state') {
+          // detect removed bullets for small impact effect
+          const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
+          for (const [id,pos] of prevBulletPos){
+            if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220});
+          }
+          prevBulletPos = curMap;
+
+          state = msg;
+          const me = msg.players.find(p=>p.id===playerId);
+          if (me) {
+            scoreEl.textContent = me.score;
+            hpEl.textContent = (me.hp ?? 0);
+            const w = me.weapon || 'pistol';
+            weaponEl.textContent = w;
+            let ammo = 0;
+            if (w==='pistol') ammo = me.pistolAmmo ?? 0;
+            else if (w==='smg') ammo = me.smgAmmo ?? 0;
+            else if (w==='shotgun') ammo = me.shotgunAmmo ?? 0;
+            else ammo = 0;
+            ammoEl.textContent = ammo;
+          }
+          const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
+          status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
+          status.dataset.state = 'connected';
+          state.remainingTime = msg.remainingTime;
+          updateTimer(state.remainingTime);
+          updatePlayerList(msg.players);
+          // Update chat toggle button label from state
+          if (typeof msg.chatEnabled === 'boolean') {
+            toggleChatBtn.textContent = msg.chatEnabled ? 'Disable Chat' : 'Enable Chat';
+            // Hide chat card and disable input when chat is disabled
+            chatInput.disabled = !msg.chatEnabled;
+            chatInput.placeholder = msg.chatEnabled ? 'Chat...' : 'Chat disabled by streamer';
+            const chatCard = chatMessagesEl.closest('.card');
+            if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
+          }
+          if (me && (me.hp ?? 0) < lastHp){ flash(); }
+          lastScore = me?me.score:lastScore;
+          lastHp = me?(me.hp ?? lastHp):lastHp;
+          lastStateTime = performance.now();
+        }
+        if (msg.type === 'chat') {
+          appendChat(msg.from, msg.message);
+        }
+        if (msg.type === 'notice') {
+          try { toast(msg.message); } catch {}
+          appendChat('System', msg.message);
+        }
+      });
+      inputIv = setInterval(() => {
+        if (ws && ws.readyState===1) {
+          ws.send(JSON.stringify({ type:'input', ...input }));
+        }
+      }, 50);
+
+      // If focus is lost, immediately send a neutral input (interval covers it, but faster feedback helps)
+      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false,down:false,left:false,right:false,shoot:false,aimX:input.aimX,aimY:input.aimY })); };
+      visHandler = () => { if (document.hidden) sendNeutralHandler(); };
+      window.addEventListener('blur', sendNeutralHandler);
+      document.addEventListener('visibilitychange', visHandler);
+
+      const onClose = () => { leaveRoom(false); };
+      ws.addEventListener('close', onClose, { once: true });
+    }
+
+    function leaveRoom(manual=true){
+      if (inputIv) { clearInterval(inputIv); inputIv = null; }
+      if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler = null; }
+      if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler = null; }
+      if (ws) { try { if (manual && ws.readyState===1) ws.close(1000,'leave'); } catch {} ws = null; }
+      status.textContent = 'disconnected';
+      status.dataset.state = 'disconnected';
+      document.body.classList.remove('connected');
+      newBtn.textContent = 'Create Room';
+      copyBtn.disabled = true; link.value = '';
+      toggleChatBtn.disabled = true; toggleChatBtn.textContent = 'Disable Chat';
+      playerId = null; prevBulletPos = new Map(); effects.length = 0; lastScore = 0; lastHp = 100;
+      state = { players:[], bullets:[], arena };
+      updatePlayerList([]);
+    }
+
+    function draw(dt=16){
+      ctx.clearRect(0,0, c.width, c.height);
+      // Fill background with solid dark color
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0,0, c.width, c.height);
+      // Arena border
+      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,c.width-2,c.height-2);
+      // Walls/rooms
+      if (state.walls){
+        ctx.fillStyle = '#FFFFFF';
+        for (const w of state.walls){ ctx.fillRect(w.x, w.y, w.w, w.h); }
+      }
+      // Pickups
+      if (state.pickups){
+        for (const pk of state.pickups){
+          ctx.save();
+          ctx.shadowColor = 'rgba(255,255,255,.16)'; ctx.shadowBlur = 8;
+          if (pk.type==='health'){
+            ctx.strokeStyle = '#66bb6a'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-8, pk.y-8, 16, 16);
+            ctx.beginPath(); ctx.moveTo(pk.x-6, pk.y); ctx.lineTo(pk.x+6, pk.y); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='speed') {
+            ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(pk.x-5, pk.y-8); ctx.lineTo(pk.x+2, pk.y-2); ctx.lineTo(pk.x-2, pk.y-2); ctx.lineTo(pk.x+5, pk.y+8); ctx.stroke();
+          } else if (pk.type==='ammo') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-7, pk.y-5, 14, 10);
+            ctx.beginPath(); ctx.moveTo(pk.x-4, pk.y+1); ctx.lineTo(pk.x-4, pk.y-1); ctx.moveTo(pk.x, pk.y+1); ctx.lineTo(pk.x, pk.y-1); ctx.moveTo(pk.x+4, pk.y+1); ctx.lineTo(pk.x+4, pk.y-1); ctx.stroke();
+          } else if (pk.type==='weapon') {
+            ctx.strokeStyle = '#ffa726'; ctx.beginPath(); ctx.moveTo(pk.x-6,pk.y); ctx.lineTo(pk.x,pk.y-8); ctx.lineTo(pk.x+2,pk.y-2); ctx.lineTo(pk.x+8,pk.y-2); ctx.lineTo(pk.x,pk.y+8); ctx.lineTo(pk.x+2,pk.y+2); ctx.lineTo(pk.x-6,pk.y); ctx.stroke();
+          }
+          
+          else if (pk.type==='shield') {
+            ctx.strokeStyle = '#26c6da'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 9, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='magnet') {
+            ctx.strokeStyle = '#ab47bc'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pk.x-3, pk.y, 6, -Math.PI/2, Math.PI/2);
+            ctx.arc(pk.x+3, pk.y, 6, Math.PI/2, -Math.PI/2);
+            ctx.stroke();
+          } else if (pk.type==='freeze') {
+            ctx.strokeStyle = '#90caf9'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(pk.x, pk.y-7); ctx.lineTo(pk.x, pk.y+7);
+            ctx.moveTo(pk.x-7, pk.y); ctx.lineTo(pk.x+7, pk.y);
+            ctx.moveTo(pk.x-5, pk.y-5); ctx.lineTo(pk.x+5, pk.y+5);
+            ctx.moveTo(pk.x-5, pk.y+5); ctx.lineTo(pk.x+5, pk.y-5);
+            ctx.stroke();
+          } else if (pk.type==='blast') {
+            ctx.strokeStyle = '#ff7043'; ctx.lineWidth = 2;
+            for (let i=0;i<8;i++){ const a=i*Math.PI/4; ctx.beginPath(); ctx.moveTo(pk.x+Math.cos(a)*3, pk.y+Math.sin(a)*3); ctx.lineTo(pk.x+Math.cos(a)*10, pk.y+Math.sin(a)*10); ctx.stroke(); }
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.stroke();
+          } else if (pk.type==='treasure') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2;
+            ctx.strokeRect(pk.x-8, pk.y-6, 16, 12);
+            ctx.beginPath(); ctx.moveTo(pk.x-8, pk.y-2); ctx.lineTo(pk.x+8, pk.y-2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(pk.x, pk.y+1, 2, 0, Math.PI*2); ctx.stroke();
+          }
+                    // label under pickup
+          ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.fill(); ctx.restore();
+          ctx.fillStyle = '#cfd8dc'; ctx.globalAlpha = 0.95;
+          const labelMap = { health:'HEALTH', speed:'SPEED', ammo:'AMMO', weapon:'WEAPON', shield:'SHIELD', magnet:'MAGNET', freeze:'FREEZE', blast:'BLAST', treasure:'TREASURE' };
+          const lbl = labelMap[pk.type] || String(pk.type).toUpperCase();
+          if (lbl) ctx.fillText(lbl, pk.x, pk.y + 14);
+          ctx.restore();
+        }
+        ctx.lineWidth = 1;
+      }
+      // Bullets
+      ctx.fillStyle = '#ffd54f';
+      for (const b of state.bullets){
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,213,79,.6)';
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      // Bullet impact effects
+      for (let i=effects.length-1;i>=0;i--){ 
+        const e=effects[i]; 
+        e.ttl-=dt; 
+        if (e.ttl<=0){ 
+          effects.splice(i,1); 
+          continue; 
+        }
+        ctx.save(); 
+        const a=Math.max(0, e.ttl/220); 
+        ctx.globalAlpha = a; 
+        ctx.strokeStyle = '#ffd54f'; 
+        ctx.beginPath(); 
+        ctx.arc(e.x,e.y,(1-a)*12+2,0,Math.PI*2); 
+        ctx.stroke(); 
+        ctx.restore(); 
+      }
+      // Players
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      let me = state.players.find(p=>p.id===playerId);
+      // Detect local melee edge and record for immediate visuals
+      if (me) {
+        if (input.melee && !prevMelee) {
+          const dx = input.aimX - me.x, dy = input.aimY - me.y; const d = Math.hypot(dx,dy)||1;
+          localMeleeDirX = dx/d; localMeleeDirY = dy/d; localMeleeAt = performance.now();
+        }
+        prevMelee = input.melee;
+      }
+      for (const p of state.players){
+        ctx.save();
+        if (p.role==='streamer'){
+          ctx.strokeStyle = '#4caf50';
+          ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.stroke();
+          if (p.weaponed){ ctx.strokeStyle='#ffa726'; ctx.globalAlpha=.6; ctx.beginPath(); ctx.arc(p.x,p.y,14,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+        } else {
+          ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
+          ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
+          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.7; ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2); ctx.stroke(); }
+          ctx.globalAlpha = .95; ctx.fillStyle = '#e57373'; ctx.fillText(p.name, p.x, p.y - 16);
+          // Emote above zombie head for 5s
+          if (p.emote && (p.emoteUntil||0) > Date.now()){
+            ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+            ctx.globalAlpha = 1;
+            ctx.fillText(p.emote, p.x, p.y - 32);
+            ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          }
+        }
+        // Bat swing arc visual (short-lived)
+        const swingAge = (state.t||Date.now()) - (p.meleeAt||0);
+        if (swingAge >= 0 && swingAge < 220) {
+          const alpha = 1 - (swingAge / 220);
+          const ang = Math.atan2(p.meleeDirY||0, p.meleeDirX||1);
+          const span = Math.PI / 1.8; // ~100Â°
+          const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.cos(ang - span/2)*r0, p.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(p.x, p.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(p.x + Math.cos(ang + span/2)*r0, p.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(p.x, p.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      // Crosshair and aim line for local player
+      me = state.players.find(p=>p.id===playerId);
+      if (me){
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,.5)';
+        ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(input.aimX, input.aimY); ctx.stroke();
+        ctx.translate(input.aimX, input.aimY);
+        ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(8,0); ctx.moveTo(0,-8); ctx.lineTo(0,8); ctx.stroke();
+        ctx.restore();
+
+        // Local predicted bat swing arc so streamer sees swing instantly
+        const age = performance.now() - localMeleeAt;
+        if (age >= 0 && age < 220) {
+          const alpha = 1 - (age / 220);
+          const ang = Math.atan2(localMeleeDirY, localMeleeDirX);
+          const span = Math.PI / 1.8; // ~100Â°
+          const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(me.x + Math.cos(ang - span/2)*r0, me.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(me.x, me.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(me.x + Math.cos(ang + span/2)*r0, me.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(me.x, me.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Also render server-synced swing for local player (fallback)
+        const swingAgeSrv = (state.t||Date.now()) - (me.meleeAt||0);
+        if (swingAgeSrv >= 0 && swingAgeSrv < 220) {
+          const alpha = 1 - (swingAgeSrv / 220);
+          const ang = Math.atan2(me.meleeDirY||0, me.meleeDirX||1);
+          const span = Math.PI / 1.8; const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(me.x + Math.cos(ang - span/2)*r0, me.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(me.x, me.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(me.x + Math.cos(ang + span/2)*r0, me.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(me.x, me.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+
+    function updatePlayerList(players){
+      playersEl.innerHTML = players.map(p=>`<span class="pill ${p.role}">${p.role==='streamer'?'🟢':'🧟'} ${p.name}${p.role==='streamer'?' · '+p.score:''}</span>`).join(' ');
+    }
+
+    function flash(){
+      flashEl.classList.add('show');
+      setTimeout(()=>flashEl.classList.remove('show'),150);
+    }
+
+    function updateTimer(seconds) {
+      const min = Math.floor(seconds / 60);
+      const sec = seconds % 60;
+      timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    function appendChat(from, message) {
+      chatMessagesEl.innerHTML += `<div>${from}: ${message}</div>`;
+      while (chatMessagesEl.children.length > 10) {
+        chatMessagesEl.removeChild(chatMessagesEl.firstChild);
+      }
+    }
+
+    function sendChat(msg) {
+      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'chat', message: msg }));
+    }
+
+    // Animation loop for effects and smoother visuals
+    let last = performance.now();
+    lastHp = 100;
+    function loop(){
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      draw(dt);
+      requestAnimationFrame(loop);
+    }
+    loop();
+
+    // Weapon switching
+    function sendSwitchWeapon(w) {
+      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'switch_weapon', weapon: w }));
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      if (e.key==='1') sendSwitchWeapon('pistol');
+      if (e.key==='2') sendSwitchWeapon('smg');
+      if (e.key==='3') sendSwitchWeapon('shotgun');
+    });
+    document.querySelectorAll('.weapon').forEach(btn => btn.addEventListener('click', (e) => {
+      const w = e.currentTarget && e.currentTarget.getAttribute('data-weapon');
+      if (w) sendSwitchWeapon(w);
+    }));
+
+    // Fullscreen toggle
+    document.getElementById('fullscreen').onclick = async () => {
+      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen().catch(()=>{}); }
+      else { await document.exitFullscreen().catch(()=>{}); }
+    };
+
+    newBtn.onclick = (ev) => { if (ev && ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); if (ws && ws.readyState===1) { leaveRoom(true); } else { boot(); } };
+    copyBtn.onclick = (ev) => { if (ev && ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); if (!copyBtn.disabled && link.value) { navigator.clipboard.writeText(link.value); toast('Join link copied'); copyBtn.textContent = 'Copied!'; setTimeout(()=>copyBtn.textContent='Copy Link',800); } };
+    toggleChatBtn.onclick = (ev) => {
+      if (ev && ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur();
+      if (!ws || ws.readyState !== 1) return;
+      // Flip desired state based on button label
+      const enable = toggleChatBtn.textContent.includes('Enable');
+      ws.send(JSON.stringify({ type:'toggle_chat', disabled: !enable }));
+    };
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && chatInput.value.trim()) {
+        sendChat(chatInput.value.trim());
+        chatInput.value = '';
+      }
+    });
+  </script>
+</body>
+</html>

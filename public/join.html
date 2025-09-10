@@ -1,0 +1,349 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arena Shooter — Join as Zombie</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Arena Shooter</div>
+    <div class="middle-controls">
+      <span class="badge" id="status" data-state="disconnected">disconnected</span>
+    </div>
+    <div class="right-controls">
+      <button id="fullscreen">Fullscreen</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="main">
+      <div class="stage"></div>
+    </div>
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">Join</div>
+        <div class="row">
+          <label for="name" class="badge">Name</label>
+          <input id="name" />
+        </div>
+        <div class="row">
+          <button id="shuffle">Random</button>
+          <button id="join">Join</button>
+          <span class="badge" id="timer">Time: --</span>
+        </div>
+        <div class="tip">WASD to move. You are a slow zombie; touch the streamer to drain their score.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Emotes</div>
+        <div id="emoteBar">
+          <button class="emote">🧟</button>
+          <button class="emote">💀</button>
+          <button class="emote">🔥</button>
+          <button class="emote">😂</button>
+          <button class="emote">❤️</button>
+          <button class="emote">💢</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Players</div>
+        <div class="pill-list" id="players"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Chat</div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="row"><input id="chatInput" placeholder="Chat..." /></div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module">
+    import { connect, nameStorage, minimalCanvas, suppressPageHotkeys, inputController } from '/common.js';
+
+    const params = new URLSearchParams(location.search);
+    const roomId = params.get('room');
+
+    const { c, ctx } = minimalCanvas(960, 540);
+    suppressPageHotkeys();
+    let ws, arena={w:960,h:540};
+    let state = { players:[], bullets:[], arena, remainingTime: 0 };
+    const input = inputController({ mouse:false });
+    const effects = [];
+    let prevBulletPos = new Map();
+
+    const status = document.getElementById('status');
+    const playersEl = document.getElementById('players');
+    const nameEl = document.getElementById('name');
+    const joinBtn = document.getElementById('join');
+    const shuffleBtn = document.getElementById('shuffle');
+    const timerEl = document.getElementById('timer');
+    const emoteBar = document.getElementById('emoteBar');
+    const chatInput = document.getElementById('chatInput');
+    const chatMessagesEl = document.getElementById('chatMessages');
+
+    // preload name
+    nameEl.value = nameStorage().get() || '';
+
+    function randomName(){
+      const pool = ("KibaRogue,WoodsScav,ShorelineRat,FactoryGhost,LabsRunner,InterchangeChad,DormsGoblin,ReserveMole,FleaFlipper,TetrizHoarder,LedXHunter,SlickSeeker,RSASSEnjoyer,M995Enjoyer,GrenadierGoon,SanitarStan,KillaChaser,TagillaTapper,GluharGuy,ShturmanScout,KnightWatcher,RogueRaider,USECFriend,BEARBuddy,JaegerPal,FenceFella,TherapistAlly,RagmanRigger,SkierSlinger,PraporPatron,MechanicMain,PeacekeeperPro,LabsRat,MarkedRoomMole,StashGremlin,MoonshineMax,ScavJunkie,OmComEnjoyer,SJ6Sprinter,AltynAddict,ThermalAndy,GreenBatteryGuy,DormsKeyKing,GPUGoblin,AmmoArbiter,WaffleFilter").split(",");
+      return pool[Math.floor(Math.random()*pool.length)];
+    }
+
+    document.getElementById('shuffle').onclick = (ev) => { nameEl.value = randomName(); if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); };
+
+    function sendChat(msg) {
+      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'chat', message: msg }));
+    }
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && chatInput.value.trim()) {
+        sendChat(chatInput.value.trim());
+        chatInput.value = '';
+      }
+    });
+
+    function appendChat(from, message) {
+      chatMessagesEl.innerHTML += `<div>${from}: ${message}</div>`;
+      while (chatMessagesEl.children.length > 10) {
+        chatMessagesEl.removeChild(chatMessagesEl.firstChild);
+      }
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    }
+
+    let sendNeutralHandler = null; let visHandler = null; let inputIv = null;
+    function leave(){
+      if (ws) { try { if (ws.readyState===1) ws.close(1000,'leave'); } catch{} ws=null; }
+      status.textContent = 'disconnected';
+      status.dataset.state = 'disconnected';
+      document.body.classList.remove('connected');
+      joinBtn.textContent = 'Join';
+      nameEl.disabled = false; shuffleBtn.disabled = false;
+      if (inputIv) { clearInterval(inputIv); inputIv = null; }
+      if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler=null; }
+      if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler=null; }
+    }
+
+    joinBtn.onclick = (ev) => {
+      if (ws && ws.readyState===1) { leave(); return; }
+      if (!roomId) { alert('Missing room id'); return; }
+      const name = (nameEl.value||'').slice(0,20);
+      nameStorage().set(name);
+      if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur();
+      ws = connect(roomId);
+      ws.addEventListener('open', () => {
+        status.textContent = 'connected';
+        status.dataset.state = 'connected';
+        document.body.classList.add('connected');
+        ws.send(JSON.stringify({ type:'join_room', role:'zombie', name }));
+        joinBtn.textContent = 'Leave';
+        nameEl.disabled = true; shuffleBtn.disabled = true;
+      });
+      ws.addEventListener('message', (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'joined') { arena = msg.arena; }
+        if (msg.type === 'state') {
+          // impact effects
+          const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
+          for (const [id,pos] of prevBulletPos){ if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220}); }
+          prevBulletPos = curMap;
+
+          state = msg; const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
+          status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`; 
+          status.dataset.state = 'connected';
+          state.remainingTime = msg.remainingTime;
+          updateTimer(state.remainingTime);
+          updatePlayerList(msg.players);
+          // Respect chat enabled/disabled from server
+          if (typeof msg.chatEnabled === 'boolean') {
+            chatInput.disabled = !msg.chatEnabled;
+            chatInput.placeholder = msg.chatEnabled ? 'Chat...' : 'Chat disabled by streamer';
+            const chatCard = chatMessagesEl.closest('.card');
+            if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
+          }
+        }
+        if (msg.type === 'chat') {
+          appendChat(msg.from, msg.message);
+        }
+        if (msg.type === 'notice') {
+          appendChat('System', msg.message);
+        }
+      });
+      // Send continuous movement state for smooth input like streamer
+      inputIv = setInterval(() => {
+        if (ws && ws.readyState===1) {
+          const { up,down,left,right } = input;
+          ws.send(JSON.stringify({ type:'input', up, down, left, right, shoot:false, aimX:0, aimY:0 }));
+        }
+      }, 50);
+
+      // If the tab loses focus while holding a key, send a neutral input
+      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, aimX:0, aimY:0 })); };
+      visHandler = () => { if (document.hidden) sendNeutralHandler(); };
+      window.addEventListener('blur', sendNeutralHandler);
+      document.addEventListener('visibilitychange', visHandler);
+
+      ws.addEventListener('close', () => { leave(); }, { once: true });
+    };
+
+    // Emote palette: send selected emoji to server (zombies only)
+    emoteBar.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!target || !(target instanceof HTMLElement) || !target.classList.contains('emote')) return;
+      const symbol = target.textContent || '';
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'emote', symbol }));
+    });
+
+    function draw(dt=16){
+      ctx.clearRect(0,0, c.width, c.height);
+      // Fill background with solid dark color
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0,0, c.width, c.height);
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#808080';
+      ctx.strokeRect(1,1,c.width-2,c.height-2);
+      // Walls/rooms
+      if (state.walls){
+        ctx.fillStyle = '#FFFFFF';
+        for (const w of state.walls){ ctx.fillRect(w.x,w.y,w.w,w.h); }
+      }
+      // Pickups
+      if (state.pickups){
+        for (const pk of state.pickups){
+          ctx.save();
+          ctx.shadowColor = 'rgba(255,255,255,.18)'; ctx.shadowBlur = 8;
+          if (pk.type==='health'){
+            ctx.strokeStyle = '#66bb6a'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-8, pk.y-8, 16, 16);
+            ctx.beginPath(); ctx.moveTo(pk.x-6, pk.y); ctx.lineTo(pk.x+6, pk.y); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='speed') {
+            ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(pk.x-5, pk.y-8); ctx.lineTo(pk.x+2, pk.y-2); ctx.lineTo(pk.x-2, pk.y-2); ctx.lineTo(pk.x+5, pk.y+8); ctx.stroke();
+          } else if (pk.type==='ammo') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-7, pk.y-5, 14, 10);
+            ctx.beginPath(); ctx.moveTo(pk.x-4, pk.y+1); ctx.lineTo(pk.x-4, pk.y-1); ctx.moveTo(pk.x, pk.y+1); ctx.lineTo(pk.x, pk.y-1); ctx.moveTo(pk.x+4, pk.y+1); ctx.lineTo(pk.x+4, pk.y-1); ctx.stroke();
+          } else if (pk.type==='weapon') {
+            ctx.strokeStyle = '#ffa726'; ctx.beginPath(); ctx.moveTo(pk.x-6,pk.y); ctx.lineTo(pk.x,pk.y-8); ctx.lineTo(pk.x+2,pk.y-2); ctx.lineTo(pk.x+8,pk.y-2); ctx.lineTo(pk.x,pk.y+8); ctx.lineTo(pk.x+2,pk.y+2); ctx.lineTo(pk.x-6,pk.y); ctx.stroke();
+          } else if (pk.type==='shield') {
+            ctx.strokeStyle = '#26c6da'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 9, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='magnet') {
+            ctx.strokeStyle = '#ab47bc'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pk.x-3, pk.y, 6, -Math.PI/2, Math.PI/2);
+            ctx.arc(pk.x+3, pk.y, 6, Math.PI/2, -Math.PI/2);
+            ctx.stroke();
+          } else if (pk.type==='freeze') {
+            ctx.strokeStyle = '#90caf9'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(pk.x, pk.y-7); ctx.lineTo(pk.x, pk.y+7);
+            ctx.moveTo(pk.x-7, pk.y); ctx.lineTo(pk.x+7, pk.y);
+            ctx.moveTo(pk.x-5, pk.y-5); ctx.lineTo(pk.x+5, pk.y+5);
+            ctx.moveTo(pk.x-5, pk.y+5); ctx.lineTo(pk.x+5, pk.y-5);
+            ctx.stroke();
+          } else if (pk.type==='blast') {
+            ctx.strokeStyle = '#ff7043'; ctx.lineWidth = 2;
+            for (let i=0;i<8;i++){ const a=i*Math.PI/4; ctx.beginPath(); ctx.moveTo(pk.x+Math.cos(a)*3, pk.y+Math.sin(a)*3); ctx.lineTo(pk.x+Math.cos(a)*10, pk.y+Math.sin(a)*10); ctx.stroke(); }
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.stroke();
+          } else if (pk.type==='treasure') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2;
+            ctx.strokeRect(pk.x-8, pk.y-6, 16, 12);
+            ctx.beginPath(); ctx.moveTo(pk.x-8, pk.y-2); ctx.lineTo(pk.x+8, pk.y-2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(pk.x, pk.y+1, 2, 0, Math.PI*2); ctx.stroke();
+          }
+          // label under pickup
+          ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.fill(); ctx.restore();
+          ctx.fillStyle = '#cfd8dc'; ctx.globalAlpha = 0.95;
+          const labelMap = { health:'HEALTH', speed:'SPEED', ammo:'AMMO', weapon:'WEAPON', shield:'SHIELD', magnet:'MAGNET', freeze:'FREEZE', blast:'BLAST', treasure:'TREASURE' };
+          const lbl = labelMap[pk.type] || String(pk.type).toUpperCase();
+          if (lbl) ctx.fillText(lbl, pk.x, pk.y + 14);
+          ctx.restore();
+        }
+        ctx.lineWidth = 1;
+      }
+      // Bullets
+      ctx.fillStyle = '#ffd54f';
+      for (const b of state.bullets){
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,213,79,.6)';
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      // Bullet impact effects
+      for (let i=effects.length-1;i>=0;i--){ const e=effects[i]; e.ttl-=dt; if (e.ttl<=0){ effects.splice(i,1); continue; } ctx.save(); const a=Math.max(0,e.ttl/220); ctx.globalAlpha=a; ctx.strokeStyle='#ffd54f'; ctx.beginPath(); ctx.arc(e.x,e.y,(1-a)*12+2,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+      // Players
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      for (const p of state.players){
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 0;
+        if (p.role==='streamer'){
+          ctx.strokeStyle = '#4caf50';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.stroke();
+          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+        } else {
+          ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
+          ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
+          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.8; ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+          ctx.fillStyle = '#e57373'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+          // Emote above zombie head for 5s
+          if (p.emote && (p.emoteUntil||0) > Date.now()){
+            ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+            ctx.globalAlpha = 1;
+            ctx.fillText(p.emote, p.x, p.y - 32);
+            ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          }
+        }
+        // Bat swing arc visual (short-lived)
+        const swingAge = (state.t||Date.now()) - (p.meleeAt||0);
+        if (swingAge >= 0 && swingAge < 220) {
+          const alpha = 1 - (swingAge / 220);
+          const ang = Math.atan2(p.meleeDirY||0, p.meleeDirX||1);
+          const span = Math.PI / 1.8; // ~100°
+          const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.cos(ang - span/2)*r0, p.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(p.x, p.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(p.x + Math.cos(ang + span/2)*r0, p.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(p.x, p.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+    }
+
+    function updatePlayerList(players){
+      playersEl.innerHTML = players.map(p=>`<span class="pill ${p.role}">${p.role==='streamer'?'🟢':'🧟'} ${p.name}${p.role==='streamer'?' · '+p.score:''}</span>`).join(' ');
+    }
+
+    function updateTimer(seconds) {
+      const min = Math.floor(seconds / 60);
+      const sec = seconds % 60;
+      timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    // Animation loop
+    let last = performance.now();
+    function loop(){ const now=performance.now(); const dt=now-last; last=now; draw(dt); requestAnimationFrame(loop); }
+    loop();
+
+    // Fullscreen
+    document.getElementById('fullscreen').onclick = async () => {
+      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen().catch(()=>{}); }
+      else { await document.exitFullscreen().catch(()=>{}); }
+    };
+  </script>
+</body>
+</html>

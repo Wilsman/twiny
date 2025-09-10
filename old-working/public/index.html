@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mini Multiplayer</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body { display: grid; place-items: center; background:#0f172a; color:#e2e8f0; font: 16px/1.4 system-ui, sans-serif; }
+      #game { background:#111827; border:1px solid #334155; width: 720px; height: 480px; position: relative; overflow: hidden; border-radius: 12px; }
+      .player { position:absolute; width: 22px; height: 22px; border-radius: 999px; background: #22d3ee; display:grid; place-items:center; font-size:10px; color:#0f172a; font-weight:600; }
+      .player.you { background:#a78bfa; }
+      .hud { position:absolute; inset:auto 12px 12px 12px; display:flex; justify-content:space-between; color:#94a3b8; font-size:12px; }
+      .badge { padding:4px 8px; border:1px solid #334155; border-radius:999px; }
+    </style>
+  </head>
+  <body>
+    <div id="game">
+      <div class="hud">
+        <span class="badge">WASD / Arrows to move</span>
+        <span id="playerCount" class="badge">Players: 1</span>
+      </div>
+    </div>
+
+    <!-- Socket.IO client -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+
+      const game = document.getElementById('game');
+      const playerCountEl = document.getElementById('playerCount');
+
+      // Store all players { id: {el, x, y} }
+      const players = new Map();
+      let myId = null;
+
+      function spawn(id, x = Math.random()*680+10, y = Math.random()*440+10, isYou = false) {
+        if (players.has(id)) return players.get(id);
+        const el = document.createElement('div');
+        el.className = 'player' + (isYou ? ' you' : '');
+        el.textContent = isYou ? 'YOU' : id.slice(0,4);
+        game.appendChild(el);
+        const p = { id, el, x, y };
+        players.set(id, p);
+        draw(p);
+        updateCount();
+        return p;
+      }
+
+      function removePlayer(id){
+        const p = players.get(id);
+        if(!p) return;
+        p.el.remove();
+        players.delete(id);
+        updateCount();
+      }
+
+      function draw(p){
+        p.el.style.transform = `translate(${Math.max(0, Math.min(698, p.x))}px, ${Math.max(0, Math.min(458, p.y))}px)`;
+      }
+
+      function updateCount(){
+        playerCountEl.textContent = `Players: ${players.size}`;
+      }
+
+      // Local movement
+      const speed = 3;
+      const keys = new Set();
+      window.addEventListener('keydown', (e)=> keys.add(e.key));
+      window.addEventListener('keyup', (e)=> keys.delete(e.key));
+
+      function step(){
+        const me = myId && players.get(myId);
+        if(me){
+          const beforeX = me.x, beforeY = me.y;
+          if(keys.has('ArrowLeft') || keys.has('a')) me.x -= speed;
+          if(keys.has('ArrowRight') || keys.has('d')) me.x += speed;
+          if(keys.has('ArrowUp') || keys.has('w')) me.y -= speed;
+          if(keys.has('ArrowDown') || keys.has('s')) me.y += speed;
+          if(me.x !== beforeX || me.y !== beforeY){
+            draw(me);
+            // Throttle sends using requestAnimationFrame cadence
+            socket.emit('player:move', { x: me.x, y: me.y });
+          }
+        }
+        requestAnimationFrame(step);
+      }
+
+      // Socket events
+      socket.on('welcome', ({ id }) => {
+        myId = id;
+        spawn(id, 100, 100, true);
+      });
+
+      socket.on('player:join', ({ id }) => {
+        spawn(id);
+      });
+
+      socket.on('player:move', ({ id, x, y }) => {
+        const p = players.get(id) || spawn(id);
+        p.x = x; p.y = y; draw(p);
+      });
+
+      socket.on('player:leave', ({ id }) => removePlayer(id));
+
+      // Kick off loop
+      requestAnimationFrame(step);
+    </script>
+  </body>
+  </html>
+
