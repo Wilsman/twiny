@@ -43,6 +43,7 @@ interface Player {
   input: Input;
   ws?: WebSocket;
   score: number; // streamer uses; zombies optional
+  banked?: number; // M1: extracted/banked score (streamer)
   alive: boolean;
   lastSeen: number;
   lastShotAt?: number;
@@ -77,6 +78,8 @@ interface Bullet {
 }
 
 interface Rect { id: string; x: number; y: number; w: number; h: number }
+// M1: Extractions
+interface Extraction { id: string; x: number; y: number; r: number; activeUntil?: number }
 type PickupType = "health" | "speed" | "ammo" | "weapon" | "shield" | "magnet" | "freeze" | "blast" | "treasure";
 interface Pickup { id: string; type: PickupType; x: number; y: number }
 
@@ -85,14 +88,17 @@ export class RoomDO {
   env: Env;
 
   // Game space
-  W = 960; // px
-  H = 540; // px
+  W = 2880; // px (larger world for exploration)
+  H = 1620; // px
 
   // Entities
   players = new Map<string, Player>();
   bullets: Bullet[] = [];
   walls: Rect[] = [];
   pickups: Pickup[] = [];
+  // M1: extractions and optional future zones
+  extractions: Extraction[] = [];
+  midSafeZones: Rect[] = [];
 
   // Loop - Different tick rates for different systems
   tickMs = 50; // 20Hz - main game loop
@@ -111,6 +117,9 @@ export class RoomDO {
     // Global effects
   zombieSlowUntil: number | undefined;
   chatEnabled = true;
+  // Extraction rotation pacing
+  extractionMinMs = 60_000; // 60s
+  extractionMaxMs = 90_000; // 90s
 
   // Metadata
   createdAt = Date.now();
@@ -150,6 +159,11 @@ export class RoomDO {
   startLoop() {
     this.running = true;
     if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
+    // Initial extraction spawn for the run
+    if (this.extractions.length === 0) {
+      this.spawnExtractions();
+      this.rotateExtractionIfNeeded(Date.now());
+    }
     
     // Main game loop - 20Hz (includes state broadcast for responsiveness)
     const step = () => {
@@ -230,6 +244,7 @@ export class RoomDO {
           pistolAmmo: role === "streamer" ? 60 : undefined,
           smgAmmo: role === "streamer" ? 120 : undefined,
           shotgunAmmo: role === "streamer" ? 24 : undefined,
+          banked: role === "streamer" ? 0 : undefined,
         };
         // Enforce single-streamer per room. Downgrade to zombie if already present.
         if (role === "streamer") {
@@ -319,6 +334,20 @@ export class RoomDO {
           }
           break;
         }
+        case "attempt_extract": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== "streamer") return;
+          const now = Date.now();
+          const active = this.extractions.find(e => (e.activeUntil || 0) > now);
+          if (!active) return;
+          const d = Math.hypot(p.pos.x - active.x, p.pos.y - active.y);
+          if (d <= active.r) {
+            p.banked = (p.banked || 0) + (p.score || 0);
+            p.score = 0;
+            this.broadcast("notice", { message: "Extraction successful!" });
+          }
+          break;
+        }
       }
     } catch {}
   }
@@ -339,6 +368,9 @@ export class RoomDO {
         this.players.delete(id);
       }
     }
+
+    // Ensure extraction rotation
+    this.rotateExtractionIfNeeded(now);
 
     // Integrate movement
     const dt = this.tickMs / 1000;
@@ -517,10 +549,10 @@ export class RoomDO {
               streamer.hp = Math.max(0, (streamer.hp ?? 100) - 10);
             }
             if ((streamer.hp ?? 0) <= 0) {
-              // Respawn streamer with penalty
+              // Respawn streamer; lose unbanked on death (keep banked)
               streamer.pos = { x: this.W / 2, y: this.H / 2 };
               streamer.hp = streamer.maxHp ?? 100;
-              streamer.score = Math.max(0, streamer.score - 2);
+              streamer.score = 0;
             }
           }// Knockback streamer slightly
           const dx = streamer.pos.x - z.pos.x; const dy = streamer.pos.y - z.pos.y; const d = Math.hypot(dx, dy) || 1;
@@ -620,13 +652,37 @@ export class RoomDO {
 
     // Round timer: reset when time elapses
     if ((this.roundEndTime || 0) > 0 && now >= (this.roundEndTime as number)) {
+      // On round end, handle extraction banking for streamer
+      const s = [...this.players.values()].find(p => p.role === "streamer");
+      if (s) {
+        const active = this.extractions.find(e => (e.activeUntil || 0) > now);
+        if (active) {
+          const dist = Math.hypot((s.pos.x - active.x), (s.pos.y - active.y));
+          if (dist <= active.r) {
+            // Bank unbanked
+            s.banked = (s.banked || 0) + (s.score || 0);
+            s.score = 0;
+          } else {
+            // Did not extract: lose unbanked
+            s.score = 0;
+          }
+        } else {
+          // No active extraction at end: lose unbanked
+          s.score = 0;
+        }
+      }
+
       this.roundEndTime = now + this.roundDurationMs;
       this.bullets = [];
       this.pickups = [];
+      // Reset and respawn extractions (1–2 per round)
+      this.extractions = [];
+      this.spawnExtractions();
+      // Immediately rotate to set one active for the new round
+      this.rotateExtractionIfNeeded(now);
       for (const p of this.players.values()) {
         if (p.role === "streamer") {
           p.pos = { x: this.W / 2, y: this.H / 2 };
-          p.score = 0;
           p.alive = true;
           p.hp = p.maxHp ?? 100;
           p.weapon = "pistol";
@@ -652,6 +708,7 @@ export class RoomDO {
       bullets: this.bullets.map(b => ({ id: b.id, x: b.pos.x, y: b.pos.y, ownerId: b.ownerId })),
       walls: this.walls.map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h })),
       pickups: this.pickups.map(pk => ({ id: pk.id, type: pk.type, x: pk.x, y: pk.y })),
+      extractions: this.extractions.map(e => ({ id: e.id, x: e.x, y: e.y, r: e.r, activeUntil: e.activeUntil })),
       arena: { w: this.W, h: this.H },
       remainingTime: Math.max(0, Math.floor(((this.roundEndTime || Date.now()) - Date.now()) / 1000)),
       chatEnabled: this.chatEnabled,
@@ -679,6 +736,7 @@ export class RoomDO {
     y: p.pos.y,
     alive: p.alive,
     score: p.score,
+    banked: p.banked ?? 0,
     hp: p.hp ?? 0,
     boosted: (p.boostUntil || 0) > Date.now(),
     ammo: p.ammo ?? 0,
@@ -820,5 +878,38 @@ export class RoomDO {
   okDistanceFromPickups(x:number,y:number,minD:number){
     for (const p of this.pickups){ if (Math.hypot(x-p.x,y-p.y) < minD) return false; }
     return true;
+  }
+
+  // M1: Extraction helpers
+  spawnExtractions() {
+    // Spawn 1–2 extraction zones at free positions
+    const count = 1 + Math.floor(Math.random() * 2);
+    const minDist = 80; // spacing between extractions
+    for (let i = 0; i < count; i++) {
+      const pos = this.randomFreePos(32);
+      if (!pos) continue;
+      // keep away from pickups a bit
+      if (!this.okDistanceFromPickups(pos.x, pos.y, 56)) continue;
+      // keep away from other extractions
+      let far = true;
+      for (const e of this.extractions) {
+        if (Math.hypot(e.x - pos.x, e.y - pos.y) < minDist) { far = false; break; }
+      }
+      if (!far) continue;
+      this.extractions.push({ id: crypto.randomUUID().slice(0,6), x: pos.x, y: pos.y, r: 28 });
+    }
+  }
+
+  rotateExtractionIfNeeded(nowMs: number) {
+    if (this.extractions.length === 0) return;
+    const active = this.extractions.find(e => (e.activeUntil || 0) > nowMs);
+    if (active) return;
+    // Choose a new extraction and set active window
+    const idx = Math.floor(Math.random() * this.extractions.length);
+    const dur = this.extractionMinMs + Math.floor(Math.random() * (this.extractionMaxMs - this.extractionMinMs + 1));
+    for (let i = 0; i < this.extractions.length; i++) this.extractions[i].activeUntil = undefined;
+    this.extractions[idx].activeUntil = nowMs + dur;
+    // Announce change
+    this.broadcast("notice", { message: "Extraction moved!" });
   }
 }

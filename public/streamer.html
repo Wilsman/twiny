@@ -6,7 +6,7 @@
   <title>Arena Shooter â€” Streamer</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
-<body>
+<body class="game">
   <div class="topbar">
     <div class="brand">Arena Shooter</div>
     <div class="middle-controls">
@@ -49,6 +49,7 @@
         <div class="card-title">Stats</div>
         <div class="row">
           <span class="badge">Score: <span id="score">0</span></span>
+          <span class="badge">Banked: <span id="banked">0</span></span>
           <span class="badge">HP: <span id="hp">100</span></span>
           <span class="badge">Weapon: <span id="weapon">pistol</span></span>
           <span class="badge">Ammo: <span id="ammo">0</span></span>
@@ -79,7 +80,7 @@
       return roomId;
     };
 
-    const { c, ctx } = minimalCanvas(960, 540);
+    const { c, ctx } = minimalCanvas(1440, 810);
     document.querySelector('.stage').appendChild(c);
     suppressPageHotkeys();
     const input = inputController();
@@ -97,6 +98,7 @@
     const link = document.getElementById('roomLink');
     const status = document.getElementById('status');
     const scoreEl = document.getElementById('score');
+    const bankedEl = document.getElementById('banked');
     const hpEl = document.getElementById('hp');
     const ammoEl = document.getElementById('ammo');
     const weaponEl = document.getElementById('weapon');
@@ -127,7 +129,7 @@
     copyBtn.disabled = true;
     // Camera: smooth, mouse-biased, no manual control
     let camX = 0, camY = 0; // top-left of viewport in world space
-    const zoom = 2; // >1 zooms in for tighter FOV
+    const zoom = 2.4; // hotline-miami style: a bit more zoomed-in
     const mouseBias = 110; // world px to bias toward aim  
     const camLerpBase = 0.05; // smoothing factor per frame higher = faster
 
@@ -174,6 +176,7 @@
           const me = msg.players.find(p=>p.id===playerId);
           if (me) {
             scoreEl.textContent = me.score;
+            bankedEl.textContent = me.banked ?? 0;
             hpEl.textContent = (me.hp ?? 0);
             const w = me.weapon || 'pistol';
             weaponEl.textContent = w;
@@ -258,10 +261,16 @@
     }
 
     function draw(dt=16){
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio||1));
+      const rect = c.getBoundingClientRect();
+      // Reset and clear in device pixels
+      ctx.setTransform(1,0,0,1,0,0);
       ctx.clearRect(0,0, c.width, c.height);
-      // Fill background with solid dark color
+      // Base transform to CSS pixels
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      // Fill background with solid dark color in CSS px
       ctx.fillStyle = '#000000';
-      ctx.fillRect(0,0, c.width, c.height);
+      ctx.fillRect(0,0, rect.width, rect.height);
       // Update camera target (follow player with slight mouse bias)
       const meCam = state.players.find(p=>p.id===playerId);
       if (meCam) {
@@ -269,7 +278,7 @@
         const aimWY = camY + (input.aimY / zoom);
         const dx = aimWX - meCam.x, dy = aimWY - meCam.y; const d = Math.hypot(dx,dy) || 1;
         const offX = (dx/d) * mouseBias, offY = (dy/d) * mouseBias;
-        const viewW = c.width / zoom, viewH = c.height / zoom;
+        const viewW = rect.width / zoom, viewH = rect.height / zoom;
         const targetX = Math.min(Math.max(0, (meCam.x + offX) - viewW/2), Math.max(0, arena.w - viewW));
         const targetY = Math.min(Math.max(0, (meCam.y + offY) - viewH/2), Math.max(0, arena.h - viewH));
         const k = Math.min(1, (dt/16) * camLerpBase);
@@ -284,6 +293,33 @@
       if (state.walls){
         ctx.fillStyle = '#FFFFFF';
         for (const w of state.walls){ ctx.fillRect(w.x, w.y, w.w, w.h); }
+      }
+      // Extractions
+      if (state.extractions) {
+        for (const ex of state.extractions) {
+          const nowMs = performance.now();
+          const active = (ex.activeUntil||0) > Date.now();
+          const pulse = active ? (0.6 + 0.4 * Math.abs(Math.sin(nowMs / 350))) : 0.25;
+          const timeLeft = active ? Math.max(0, Math.ceil(((ex.activeUntil||0) - Date.now()) / 1000)) : 0;
+          ctx.save();
+          ctx.lineWidth = active ? 3 : 2;
+          ctx.globalAlpha = pulse;
+          ctx.strokeStyle = '#81c784';
+          ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r, 0, Math.PI*2); ctx.stroke();
+          // subtle outer pulse ring when active
+          if (active) {
+            ctx.globalAlpha = Math.max(0, pulse * 0.35);
+            ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r + 6, 0, Math.PI*2); ctx.stroke();
+          }
+          // label and timer
+          ctx.globalAlpha = active ? 0.95 : 0.35;
+          ctx.fillStyle = '#c8e6c9';
+          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.textAlign = 'center';
+          const label = active ? `EXTRACT ${timeLeft}s` : 'EXTRACT';
+          ctx.fillText(label, ex.x, ex.y - ex.r - 6);
+          ctx.restore();
+        }
       }
       // Pickups
       if (state.pickups){
@@ -478,8 +514,46 @@
       // End world transform
       ctx.restore();
 
+      // In-game HUD (top-right): Extract time, Score, Ammo
+      const meHud = state.players.find(p=>p.id===playerId);
+      const activeEx = (state.extractions||[]).find(ex => (ex.activeUntil||0) > Date.now());
+      const extractLeft = activeEx ? Math.max(0, Math.ceil(((activeEx.activeUntil||0) - Date.now())/1000)) : 0;
+      const weapon = meHud && (meHud.weapon||'pistol') || 'pistol';
+      let ammo = 0; if (meHud){ if (weapon==='pistol') ammo=meHud.pistolAmmo||0; else if (weapon==='smg') ammo=meHud.smgAmmo||0; else if (weapon==='shotgun') ammo=meHud.shotgunAmmo||0; }
+      const hudLines = [
+        `Extract: ${activeEx?extractLeft+'s':'—'}`,
+        `Score: ${meHud?meHud.score:0}  Banked: ${meHud?meHud.banked:0}`,
+        `Weapon: ${weapon}  Ammo: ${ammo}`,
+      ];
+      const pad = 8; const lineH = 16; const boxW = 220; const boxH = pad*2 + hudLines.length*lineH;
+      const x0 = rect.width - boxW - 12; const y0 = 12;
+      ctx.save();
+      ctx.globalAlpha = .95; ctx.fillStyle = 'rgba(18,20,24,.86)'; ctx.strokeStyle = 'rgba(255,255,255,.08)';
+      ctx.lineWidth = 1.5; roundRect(ctx, x0, y0, boxW, boxH, 10, true, true);
+      ctx.fillStyle = '#cfd8dc'; ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      for (let i=0;i<hudLines.length;i++){ ctx.fillText(hudLines[i], x0+10, y0+pad + (i+1)*lineH - 4); }
+      ctx.restore();
+
       // Screen-space border overlay
-      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,c.width-2,c.height-2);
+      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,rect.width-2,rect.height-2);
+    }
+
+    // small util for rounded rects on HUD
+    function roundRect(ctx,x,y,w,h,r,fill,stroke){
+      if (typeof r === 'number') r = {tl:r,tr:r,br:r,bl:r};
+      ctx.beginPath();
+      ctx.moveTo(x+r.tl, y);
+      ctx.lineTo(x+w-r.tr, y);
+      ctx.quadraticCurveTo(x+w, y, x+w, y+r.tr);
+      ctx.lineTo(x+w, y+h-r.br);
+      ctx.quadraticCurveTo(x+w, y+h, x+w-r.br, y+h);
+      ctx.lineTo(x+r.bl, y+h);
+      ctx.quadraticCurveTo(x, y+h, x, y+h-r.bl);
+      ctx.lineTo(x, y+r.tl);
+      ctx.quadraticCurveTo(x, y, x+r.tl, y);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
     }
 
     function updatePlayerList(players){
@@ -560,6 +634,20 @@
       if (e.key==='1') sendSwitchWeapon('pistol');
       if (e.key==='2') sendSwitchWeapon('smg');
       if (e.key==='3') sendSwitchWeapon('shotgun');
+      // Optional: mid-round extract attempt on X
+      if (e.key==='x' || e.key==='X') {
+        // Only send if inside an active extraction ring
+        try {
+          const me = state.players.find(p=>p.id===playerId);
+          if (!me || !state.extractions) return;
+          const active = state.extractions.find(ex => (ex.activeUntil||0) > Date.now());
+          if (!active) return;
+          const d = Math.hypot(me.x - active.x, me.y - active.y);
+          if (d <= active.r && ws && ws.readyState===1) {
+            ws.send(JSON.stringify({ type:'attempt_extract' }));
+          }
+        } catch {}
+      }
     });
     document.querySelectorAll('.weapon').forEach(btn => btn.addEventListener('click', (e) => {
       const w = e.currentTarget && e.currentTarget.getAttribute('data-weapon');

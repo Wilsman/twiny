@@ -3,94 +3,96 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Streamer vs. Chat Zombies</title>
+  <title>Streamer vs. Chat — Zombies</title>
   <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .hero {
+      position: relative;
+      min-height: 100dvh;
+      display: grid; place-items: center;
+      overflow: hidden;
+    }
+    .hero-inner { text-align: center; padding: 100px 20px 60px; }
+    .title {
+      font-weight: 800; font-size: clamp(28px, 6vw, 56px);
+      letter-spacing: .5px;
+      background: linear-gradient(90deg, #fff, #a5b4fc 35%, #99f6e4 70%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      text-shadow: 0 10px 40px rgba(0,0,0,.45);
+    }
+    .subtitle { color: var(--muted); margin-top: 10px; max-width: 900px; margin-inline: auto; }
+    .cta { margin-top: 26px; display: inline-flex; gap: 10px; flex-wrap: wrap; }
+    .cta a { text-decoration: none; }
+    .btn-xl { padding: 14px 18px; font-size: 16px; border-radius: 14px; border: 1px solid var(--border); background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.08)); box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+    .btn-xl.primary { color: var(--teal); border-color: color-mix(in oklab, var(--teal) 35%, transparent); }
+    .btn-xl.secondary { color: #c3c7d1; }
+
+    /* Floating blobs */
+    .blob {
+      position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; filter: blur(60px); opacity: .22; pointer-events: none;
+      background: radial-gradient(circle at 40% 40%, rgba(45,212,191,.6), transparent 55%);
+      animation: drift 24s ease-in-out infinite alternate;
+    }
+    .blob.b2 { background: radial-gradient(circle at 60% 60%, rgba(244,114,182,.6), transparent 55%); animation-duration: 28s; animation-delay: -4s; }
+    .blob.b3 { background: radial-gradient(circle at 50% 50%, rgba(96,165,250,.6), transparent 55%); animation-duration: 30s; animation-delay: -8s; }
+    @keyframes drift { from { transform: translate(-10%, -10%) scale(1); } to { transform: translate(10%, 10%) scale(1.08); } }
+
+    /* Cards row with subtle entrance */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding: 24px; max-width: 1100px; margin: 0 auto 40px; }
+    .card.hero-card { opacity: 0; transform: translateY(10px); animation: rise .6s ease forwards; }
+    .card.hero-card:nth-child(2) { animation-delay: .08s; }
+    .card.hero-card:nth-child(3) { animation-delay: .16s; }
+    @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  </style>
+  <script type="module">
+    // tiny confetti animation on load
+    window.addEventListener('load', () => {
+      const el = document.createElement('div');
+      el.style.position = 'fixed'; el.style.inset = '0'; el.style.pointerEvents='none'; document.body.appendChild(el);
+      const n = 60; const parts = [];
+      for (let i=0;i<n;i++){
+        const p=document.createElement('div'); p.style.position='absolute'; p.style.width='6px'; p.style.height='10px'; p.style.borderRadius='2px';
+        p.style.left = Math.random()*100+'%'; p.style.top = '-20px';
+        const colors=['#60a5fa','#f472b6','#2dd4bf','#ffd54f']; p.style.background = colors[i%colors.length];
+        p.style.opacity = '.9'; p.style.transform = `rotate(${Math.random()*180}deg)`;
+        el.appendChild(p); parts.push({el:p, y:-20, vy: 1+Math.random()*3, x: parseFloat(p.style.left), vx: (Math.random()-.5)*0.2, r: Math.random()*180, vr: (Math.random()-.5)*3});
+      }
+      const step=()=>{ for(const q of parts){ q.vy+=0.02; q.y+=q.vy; q.x+=q.vx; q.r+=q.vr; q.el.style.top=q.y+'px'; q.el.style.left=q.x+'%'; q.el.style.transform=`rotate(${q.r}deg)`; if(q.y>window.innerHeight+40) q.y=-20; } requestAnimationFrame(step); };
+      step();
+      setTimeout(()=>{ el.remove(); }, 1800);
+    });
+  </script>
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">Arena Shooter</div>
-    <div class="middle-controls"></div>
-    <div class="right-controls"></div>
+    <div class="brand">Streamer vs. Chat</div>
+    <div class="middle-controls">
+      <span class="badge" id="status" data-state="disconnected">Welcome</span>
+    </div>
+    <div class="right-controls">
+      <a href="/streamer.html"><button class="primary">Streamer</button></a>
+      <a href="/join.html"><button>Join</button></a>
+    </div>
   </div>
-
-  <div class="app" style="grid-template-columns: 1fr;">
-    <main class="main">
-      <div class="stage" style="min-height: 60vh;">
-        <div class="card" style="max-width: 680px; width: 100%;">
-          <div class="card-title">Streamer vs. Chat Zombies</div>
-          <div style="padding: 8px 4px;">
-            <h1 style="margin: 8px 0 16px; font-size: 28px;">Pick your role</h1>
-            <div class="row" style="margin-bottom: 14px;">
-              <a href="/streamer.html"><button style="font-size: 16px;">I am the Streamer</button></a>
-              <span class="tip">Create a room and share the link.</span>
-            </div>
-            <div class="row" style="align-items: stretch;">
-              <input id="joinInput" class="mono" placeholder="Paste room link or code (e.g. us-west-abc123)" />
-              <button id="joinBtn" style="font-size: 16px;">Join as Zombie</button>
-            </div>
-            <div class="tip" style="margin-top: 8px;">You can paste either a full join URL or just the room code.</div>
-          </div>
-        </div>
-
-        <div class="card" style="max-width: 680px; width: 100%; margin-top: 16px;">
-          <div class="card-title">Tutorial</div>
-          <div class="row small" style="align-items: flex-start;">
-            <div style="flex:1; min-width: 260px;">
-              <div style="margin-bottom: 8px;"><span class="pill streamer">🟢 Streamer</span></div>
-              <ul class="tip" style="margin: 0 0 0 18px;">
-                <li>WASD to move; mouse to aim.</li>
-                <li>Left click to shoot; right click or Q to swing bat.</li>
-                <li>Press 1/2/3 to switch Pistol/SMG/Shotgun.</li>
-                <li>Click “Create Room” and share the join link.</li>
-                <li>Use “Disable Chat” if things get spicy.</li>
-                <li>Toggle “Nerd Stats” for FPS/latency overlay.</li>
-                <li>Fullscreen recommended for best experience.</li>
-              </ul>
-            </div>
-            <div style="flex:1; min-width: 260px;">
-              <div style="margin-bottom: 8px;"><span class="pill zombie">🧟 Zombies</span></div>
-              <ul class="tip" style="margin: 0 0 0 18px;">
-                <li>WASD to shamble; no mouse needed.</li>
-                <li>Touch the streamer to drain their score.</li>
-                <li>Use the emote bar to cheer/taunt (🧟 💀 🔥 😂 ❤️ 💢).</li>
-                <li>Chat may be disabled by the streamer.</li>
-                <li>Stay persistent and overwhelm in numbers!</li>
-              </ul>
-            </div>
-          </div>
-        </div>
+  <div class="hero">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+    <div class="hero-inner">
+      <div class="title">Streamer vs. Chat — Zombies</div>
+      <div class="subtitle">A fast, top‑down extraction arena: One streamer, many zombies. Bank loot, survive the horde, and extract before time runs out.</div>
+      <div class="cta">
+        <a href="/streamer.html"><button class="btn-xl primary">Play as Streamer</button></a>
+        <a href="/join.html"><button class="btn-xl secondary">Join as Zombie</button></a>
       </div>
-    </main>
+    </div>
   </div>
 
-  <script type="module">
-    const input = document.getElementById('joinInput');
-    const joinBtn = document.getElementById('joinBtn');
-
-    function parseRoom(value) {
-      if (!value) return '';
-      value = value.trim();
-      try {
-        const u = new URL(value);
-        const fromQuery = u.searchParams.get('room');
-        if (fromQuery) return fromQuery;
-        // allow last path segment that looks like code
-        const seg = u.pathname.split('/').filter(Boolean).pop() || '';
-        if (/^[a-z0-9\-]{4,}$/.test(seg)) return seg;
-      } catch {}
-      // If not a URL, accept raw code
-      if (/^[a-z0-9\-]{4,}$/.test(value)) return value;
-      return '';
-    }
-
-    function goJoin() {
-      const code = parseRoom(input.value);
-      if (!code) { alert('Please paste a valid join link or room code.'); return; }
-      location.href = `/join.html?room=${encodeURIComponent(code)}`;
-    }
-
-    joinBtn.addEventListener('click', goJoin);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') goJoin(); });
-  </script>
+  <div class="cards">
+    <div class="card hero-card"><div class="card-title">20Hz Server</div><div class="tip">Authoritative sim with fair hits and clean rollback for inputs.</div></div>
+    <div class="card hero-card"><div class="card-title">Tarkov Tension</div><div class="tip">Loot treasure to raise your score, but only extraction banks it.</div></div>
+    <div class="card hero-card"><div class="card-title">Chat vs. You</div><div class="tip">Hundreds of slow zombies, simple inputs, and satisfying chaos.</div></div>
+  </div>
 </body>
 </html>
+

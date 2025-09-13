@@ -58,6 +58,57 @@ wrangler.toml
 <files>
 This section contains the contents of the repository's files.
 
+<file path="AGENTS.md">
+# Repository Guidelines
+
+This project is a minimal Cloudflare Worker + Durable Objects backend with static client files for a “Streamer vs. Chat Zombies” arena. Use this guide to navigate, develop, and contribute efficiently.
+
+## Project Structure & Module Organization
+- `src/worker.ts` — Worker entry (routes `/create`, `/ws/:room`).
+- `src/room.ts` — Durable Object logic and game loop.
+- `public/` — Static client: `streamer.html`, `join.html`, `common.js`, `styles.css`.
+- `wrangler.toml` — Worker config, DO binding, migrations, assets.
+- `README.md` — Run and deploy notes.
+
+## Build, Test, and Development Commands
+- `npx wrangler dev` — Run local dev server with DO and assets.
+- `npx wrangler deploy` — Deploy to Cloudflare.
+- Optional: `npm i -D wrangler` then `wrangler dev/deploy` via PATH.
+
+## Coding Style & Naming Conventions
+- Language: TypeScript for Worker/DO; plain JS/HTML/CSS for `public`.
+- Indentation: 2 spaces; keep lines concise and explicit.
+- Naming: TypeScript uses `camelCase` for vars/functions, `PascalCase` for classes (e.g., `RoomDO`). Static files use kebab-case (e.g., `streamer.html`).
+- Imports: prefer relative module paths within `src`.
+- Keep Worker code side-effect–free on import; initialize within handlers/constructors.
+
+## Testing Guidelines
+- No formal test harness included. Validate via `wrangler dev` and manual flows:
+  - Open `http://127.0.0.1:8787/streamer.html` ? Create Room.
+  - Join with `public/join.html?room=XXXXXX` in another tab.
+- If adding tests, colocate under `src/__tests__/` and use a lightweight runner (e.g., `vitest`) without changing runtime behavior.
+
+## Commit & Pull Request Guidelines
+- Commits: concise imperative subject, scoped changes (e.g., `room: cap zombies at 100`).
+- PRs: include purpose, screenshots/GIFs for UI changes, and steps to validate with `wrangler dev`. Link related issues and note any config changes in `wrangler.toml`.
+
+## Security & Configuration Tips
+- `wrangler.toml` contains `ROOMS` Durable Object binding and `TARKOV_NAMES` sample names. Add secrets via `wrangler secret put NAME` (do not commit secrets).
+- Expose only `/create` and `/ws/*` from the Worker; serve `public/` via Pages or Worker assets.
+- Sanitize/validate inputs in `room.ts`; keep server authoritative state and tick rate conservative.
+
+## Architecture Overview
+- Worker handles HTTP routes and WebSocket upgrades; a Room Durable Object instance owns room state and broadcasts at ~20Hz. Static pages connect to `/ws/:room` and render client controls.
+</file>
+
+<file path="package.json">
+{
+  "devDependencies": {
+    "wrangler": "^4.35.0"
+  }
+}
+</file>
+
 <file path="public/index.html">
 <!doctype html>
 <html>
@@ -157,6 +208,61 @@ This section contains the contents of the repository's files.
 </html>
 </file>
 
+<file path="README.md">
+# Cloudflare Arena Shooter (Streamer vs. Chat Zombies)
+
+Ultra-minimal top-down arena where the **streamer** moves fast and shoots; **chat** joins via a link and plays slow **zombies**. Built on **Cloudflare Workers + Durable Objects** with raw **WebSockets**. Static HTML served by Pages (or any static host).
+
+## Features
+- Rooms keyed by URL (e.g. `/ws/abcd12`) with one DO instance per room.
+- Streamer: WASD + mouse aim + click to shoot.
+- Chat: WASD movement as slow zombies; on touch, streamer loses 1 score.
+- Server-authoritative positions; 20Hz snapshots.
+
+## Run locally
+```bash
+npm create cloudflare@latest . # or `npm i -D wrangler`
+wrangler dev
+```
+Open `http://127.0.0.1:8787/streamer.html` and click **Create Room**. Share the generated `join.html?room=XXXXXX` link.
+
+> If serving static files from another host (e.g. Pages), ensure the Worker is reachable at the same domain (or adjust `public/*.html` to point to your Worker origin).
+
+## Deploy
+1. `wrangler deploy`
+2. Host `/public` with Cloudflare Pages **or** serve them elsewhere.
+3. Point your domain routes to the Worker (`/ws/*`, `/create`).
+
+## Notes
+- This is intentionally minimal: no authentication, no persistence beyond DO lifetime.
+- For cost/scale, consider Durable Object WebSocket hibernation and backoff reconnects.
+- Security: names are sanitized; inputs are rate-limited implicitly by tick; add explicit token bucket if you expect abuse.
+
+## Customize
+- Speeds, radii, arena size in `src/room.ts`.
+- Add scoreboard UI, streamer-only control panel, zombie cosmetics, etc.
+</file>
+
+<file path="wrangler.toml">
+name = "arena-shooter"
+main = "src/worker.ts"
+compatibility_date = "2024-10-22"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+[vars]
+TARKOV_NAMES = "KibaRogue,WoodsScav,ShorelineRat,FactoryGhost,LabsRunner,InterchangeChad,DormsGoblin,ReserveMole,FleaFlipper,TetrizHoarder,LedXHunter,SlickSeeker,RSASSEnjoyer,M995Enjoyer,GrenadierGoon,SanitarStan,KillaChaser,TagillaTapper,GluharGuy,ShturmanScout,KnightWatcher,RogueRaider,USECFriend,BEARBuddy,JaegerPal,FenceFella,TherapistAlly,RagmanRigger,SkierSlinger,PraporPatron,MechanicMain,PeacekeeperPro,LabsRat,MarkedRoomMole,StashGremlin,MoonshineMax,ScavJunkie,OmComEnjoyer,SJ6Sprinter,AltynAddict,ThermalAndy,GreenBatteryGuy,DormsKeyKing,GPUGoblin,AmmoArbiter,WaffleFilter"
+
+[assets]
+directory = "public"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+</file>
+
 <file path=".gitignore">
 # Dependencies
 node_modules/
@@ -223,57 +329,6 @@ old-working/
 # Lock files (keep package-lock.json but ignore others)
 yarn.lock
 pnpm-lock.yaml
-</file>
-
-<file path="AGENTS.md">
-# Repository Guidelines
-
-This project is a minimal Cloudflare Worker + Durable Objects backend with static client files for a “Streamer vs. Chat Zombies” arena. Use this guide to navigate, develop, and contribute efficiently.
-
-## Project Structure & Module Organization
-- `src/worker.ts` — Worker entry (routes `/create`, `/ws/:room`).
-- `src/room.ts` — Durable Object logic and game loop.
-- `public/` — Static client: `streamer.html`, `join.html`, `common.js`, `styles.css`.
-- `wrangler.toml` — Worker config, DO binding, migrations, assets.
-- `README.md` — Run and deploy notes.
-
-## Build, Test, and Development Commands
-- `npx wrangler dev` — Run local dev server with DO and assets.
-- `npx wrangler deploy` — Deploy to Cloudflare.
-- Optional: `npm i -D wrangler` then `wrangler dev/deploy` via PATH.
-
-## Coding Style & Naming Conventions
-- Language: TypeScript for Worker/DO; plain JS/HTML/CSS for `public`.
-- Indentation: 2 spaces; keep lines concise and explicit.
-- Naming: TypeScript uses `camelCase` for vars/functions, `PascalCase` for classes (e.g., `RoomDO`). Static files use kebab-case (e.g., `streamer.html`).
-- Imports: prefer relative module paths within `src`.
-- Keep Worker code side-effect–free on import; initialize within handlers/constructors.
-
-## Testing Guidelines
-- No formal test harness included. Validate via `wrangler dev` and manual flows:
-  - Open `http://127.0.0.1:8787/streamer.html` ? Create Room.
-  - Join with `public/join.html?room=XXXXXX` in another tab.
-- If adding tests, colocate under `src/__tests__/` and use a lightweight runner (e.g., `vitest`) without changing runtime behavior.
-
-## Commit & Pull Request Guidelines
-- Commits: concise imperative subject, scoped changes (e.g., `room: cap zombies at 100`).
-- PRs: include purpose, screenshots/GIFs for UI changes, and steps to validate with `wrangler dev`. Link related issues and note any config changes in `wrangler.toml`.
-
-## Security & Configuration Tips
-- `wrangler.toml` contains `ROOMS` Durable Object binding and `TARKOV_NAMES` sample names. Add secrets via `wrangler secret put NAME` (do not commit secrets).
-- Expose only `/create` and `/ws/*` from the Worker; serve `public/` via Pages or Worker assets.
-- Sanitize/validate inputs in `room.ts`; keep server authoritative state and tick rate conservative.
-
-## Architecture Overview
-- Worker handles HTTP routes and WebSocket upgrades; a Room Durable Object instance owns room state and broadcasts at ~20Hz. Static pages connect to `/ws/:room` and render client controls.
-</file>
-
-<file path="package.json">
-{
-  "devDependencies": {
-    "wrangler": "^4.35.0"
-  }
-}
 </file>
 
 <file path="public/common.js">
@@ -726,6 +781,28 @@ export function toast(msg, ms=1200) {
         ctx.fillStyle = '#FFFFFF';
         for (const w of state.walls){ ctx.fillRect(w.x,w.y,w.w,w.h); }
       }
+      // Extractions
+      if (state.extractions) {
+        for (const ex of state.extractions) {
+          const nowMs = performance.now();
+          const active = (ex.activeUntil||0) > Date.now();
+          const pulse = active ? (0.6 + 0.4 * Math.abs(Math.sin(nowMs / 350))) : 0.25;
+          const timeLeft = active ? Math.max(0, Math.ceil(((ex.activeUntil||0) - Date.now()) / 1000)) : 0;
+          ctx.save();
+          ctx.lineWidth = active ? 3 : 2;
+          ctx.globalAlpha = pulse;
+          ctx.strokeStyle = '#81c784';
+          ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r, 0, Math.PI*2); ctx.stroke();
+          if (active) { ctx.globalAlpha = Math.max(0, pulse * 0.35); ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r + 6, 0, Math.PI*2); ctx.stroke(); }
+          ctx.globalAlpha = active ? 0.95 : 0.35;
+          ctx.fillStyle = '#c8e6c9';
+          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.textAlign = 'center';
+          const label = active ? `EXTRACT ${timeLeft}s` : 'EXTRACT';
+          ctx.fillText(label, ex.x, ex.y - ex.r - 6);
+          ctx.restore();
+        }
+      }
       // Pickups
       if (state.pickups){
         for (const pk of state.pickups){
@@ -944,6 +1021,7 @@ export function toast(msg, ms=1200) {
         <div class="card-title">Stats</div>
         <div class="row">
           <span class="badge">Score: <span id="score">0</span></span>
+          <span class="badge">Banked: <span id="banked">0</span></span>
           <span class="badge">HP: <span id="hp">100</span></span>
           <span class="badge">Weapon: <span id="weapon">pistol</span></span>
           <span class="badge">Ammo: <span id="ammo">0</span></span>
@@ -992,6 +1070,7 @@ export function toast(msg, ms=1200) {
     const link = document.getElementById('roomLink');
     const status = document.getElementById('status');
     const scoreEl = document.getElementById('score');
+    const bankedEl = document.getElementById('banked');
     const hpEl = document.getElementById('hp');
     const ammoEl = document.getElementById('ammo');
     const weaponEl = document.getElementById('weapon');
@@ -1069,6 +1148,7 @@ export function toast(msg, ms=1200) {
           const me = msg.players.find(p=>p.id===playerId);
           if (me) {
             scoreEl.textContent = me.score;
+            bankedEl.textContent = me.banked ?? 0;
             hpEl.textContent = (me.hp ?? 0);
             const w = me.weapon || 'pistol';
             weaponEl.textContent = w;
@@ -1179,6 +1259,33 @@ export function toast(msg, ms=1200) {
       if (state.walls){
         ctx.fillStyle = '#FFFFFF';
         for (const w of state.walls){ ctx.fillRect(w.x, w.y, w.w, w.h); }
+      }
+      // Extractions
+      if (state.extractions) {
+        for (const ex of state.extractions) {
+          const nowMs = performance.now();
+          const active = (ex.activeUntil||0) > Date.now();
+          const pulse = active ? (0.6 + 0.4 * Math.abs(Math.sin(nowMs / 350))) : 0.25;
+          const timeLeft = active ? Math.max(0, Math.ceil(((ex.activeUntil||0) - Date.now()) / 1000)) : 0;
+          ctx.save();
+          ctx.lineWidth = active ? 3 : 2;
+          ctx.globalAlpha = pulse;
+          ctx.strokeStyle = '#81c784';
+          ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r, 0, Math.PI*2); ctx.stroke();
+          // subtle outer pulse ring when active
+          if (active) {
+            ctx.globalAlpha = Math.max(0, pulse * 0.35);
+            ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r + 6, 0, Math.PI*2); ctx.stroke();
+          }
+          // label and timer
+          ctx.globalAlpha = active ? 0.95 : 0.35;
+          ctx.fillStyle = '#c8e6c9';
+          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.textAlign = 'center';
+          const label = active ? `EXTRACT ${timeLeft}s` : 'EXTRACT';
+          ctx.fillText(label, ex.x, ex.y - ex.r - 6);
+          ctx.restore();
+        }
       }
       // Pickups
       if (state.pickups){
@@ -1455,6 +1562,20 @@ export function toast(msg, ms=1200) {
       if (e.key==='1') sendSwitchWeapon('pistol');
       if (e.key==='2') sendSwitchWeapon('smg');
       if (e.key==='3') sendSwitchWeapon('shotgun');
+      // Optional: mid-round extract attempt on X
+      if (e.key==='x' || e.key==='X') {
+        // Only send if inside an active extraction ring
+        try {
+          const me = state.players.find(p=>p.id===playerId);
+          if (!me || !state.extractions) return;
+          const active = state.extractions.find(ex => (ex.activeUntil||0) > Date.now());
+          if (!active) return;
+          const d = Math.hypot(me.x - active.x, me.y - active.y);
+          if (d <= active.r && ws && ws.readyState===1) {
+            ws.send(JSON.stringify({ type:'attempt_extract' }));
+          }
+        } catch {}
+      }
     });
     document.querySelectorAll('.weapon').forEach(btn => btn.addEventListener('click', (e) => {
       const w = e.currentTarget && e.currentTarget.getAttribute('data-weapon');
@@ -1760,41 +1881,6 @@ body.connected canvas.arena {
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 </file>
 
-<file path="README.md">
-# Cloudflare Arena Shooter (Streamer vs. Chat Zombies)
-
-Ultra-minimal top-down arena where the **streamer** moves fast and shoots; **chat** joins via a link and plays slow **zombies**. Built on **Cloudflare Workers + Durable Objects** with raw **WebSockets**. Static HTML served by Pages (or any static host).
-
-## Features
-- Rooms keyed by URL (e.g. `/ws/abcd12`) with one DO instance per room.
-- Streamer: WASD + mouse aim + click to shoot.
-- Chat: WASD movement as slow zombies; on touch, streamer loses 1 score.
-- Server-authoritative positions; 20Hz snapshots.
-
-## Run locally
-```bash
-npm create cloudflare@latest . # or `npm i -D wrangler`
-wrangler dev
-```
-Open `http://127.0.0.1:8787/streamer.html` and click **Create Room**. Share the generated `join.html?room=XXXXXX` link.
-
-> If serving static files from another host (e.g. Pages), ensure the Worker is reachable at the same domain (or adjust `public/*.html` to point to your Worker origin).
-
-## Deploy
-1. `wrangler deploy`
-2. Host `/public` with Cloudflare Pages **or** serve them elsewhere.
-3. Point your domain routes to the Worker (`/ws/*`, `/create`).
-
-## Notes
-- This is intentionally minimal: no authentication, no persistence beyond DO lifetime.
-- For cost/scale, consider Durable Object WebSocket hibernation and backoff reconnects.
-- Security: names are sanitized; inputs are rate-limited implicitly by tick; add explicit token bucket if you expect abuse.
-
-## Customize
-- Speeds, radii, arena size in `src/room.ts`.
-- Add scoreboard UI, streamer-only control panel, zombie cosmetics, etc.
-</file>
-
 <file path="src/room.ts">
 // Minimal top-down arena shooter: one Streamer (fast marine) vs many Chat Zombies (slow).
 // Server maintains authoritative positions and scores. 20Hz tick.
@@ -1841,6 +1927,7 @@ interface Player {
   input: Input;
   ws?: WebSocket;
   score: number; // streamer uses; zombies optional
+  banked?: number; // M1: extracted/banked score (streamer)
   alive: boolean;
   lastSeen: number;
   lastShotAt?: number;
@@ -1875,6 +1962,8 @@ interface Bullet {
 }
 
 interface Rect { id: string; x: number; y: number; w: number; h: number }
+// M1: Extractions
+interface Extraction { id: string; x: number; y: number; r: number; activeUntil?: number }
 type PickupType = "health" | "speed" | "ammo" | "weapon" | "shield" | "magnet" | "freeze" | "blast" | "treasure";
 interface Pickup { id: string; type: PickupType; x: number; y: number }
 
@@ -1891,6 +1980,9 @@ export class RoomDO {
   bullets: Bullet[] = [];
   walls: Rect[] = [];
   pickups: Pickup[] = [];
+  // M1: extractions and optional future zones
+  extractions: Extraction[] = [];
+  midSafeZones: Rect[] = [];
 
   // Loop - Different tick rates for different systems
   tickMs = 50; // 20Hz - main game loop
@@ -1909,6 +2001,9 @@ export class RoomDO {
     // Global effects
   zombieSlowUntil: number | undefined;
   chatEnabled = true;
+  // Extraction rotation pacing
+  extractionMinMs = 60_000; // 60s
+  extractionMaxMs = 90_000; // 90s
 
   // Metadata
   createdAt = Date.now();
@@ -1948,6 +2043,11 @@ export class RoomDO {
   startLoop() {
     this.running = true;
     if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
+    // Initial extraction spawn for the run
+    if (this.extractions.length === 0) {
+      this.spawnExtractions();
+      this.rotateExtractionIfNeeded(Date.now());
+    }
     
     // Main game loop - 20Hz (includes state broadcast for responsiveness)
     const step = () => {
@@ -2028,6 +2128,7 @@ export class RoomDO {
           pistolAmmo: role === "streamer" ? 60 : undefined,
           smgAmmo: role === "streamer" ? 120 : undefined,
           shotgunAmmo: role === "streamer" ? 24 : undefined,
+          banked: role === "streamer" ? 0 : undefined,
         };
         // Enforce single-streamer per room. Downgrade to zombie if already present.
         if (role === "streamer") {
@@ -2117,6 +2218,20 @@ export class RoomDO {
           }
           break;
         }
+        case "attempt_extract": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== "streamer") return;
+          const now = Date.now();
+          const active = this.extractions.find(e => (e.activeUntil || 0) > now);
+          if (!active) return;
+          const d = Math.hypot(p.pos.x - active.x, p.pos.y - active.y);
+          if (d <= active.r) {
+            p.banked = (p.banked || 0) + (p.score || 0);
+            p.score = 0;
+            this.broadcast("notice", { message: "Extraction successful!" });
+          }
+          break;
+        }
       }
     } catch {}
   }
@@ -2137,6 +2252,9 @@ export class RoomDO {
         this.players.delete(id);
       }
     }
+
+    // Ensure extraction rotation
+    this.rotateExtractionIfNeeded(now);
 
     // Integrate movement
     const dt = this.tickMs / 1000;
@@ -2315,10 +2433,10 @@ export class RoomDO {
               streamer.hp = Math.max(0, (streamer.hp ?? 100) - 10);
             }
             if ((streamer.hp ?? 0) <= 0) {
-              // Respawn streamer with penalty
+              // Respawn streamer; lose unbanked on death (keep banked)
               streamer.pos = { x: this.W / 2, y: this.H / 2 };
               streamer.hp = streamer.maxHp ?? 100;
-              streamer.score = Math.max(0, streamer.score - 2);
+              streamer.score = 0;
             }
           }// Knockback streamer slightly
           const dx = streamer.pos.x - z.pos.x; const dy = streamer.pos.y - z.pos.y; const d = Math.hypot(dx, dy) || 1;
@@ -2418,13 +2536,37 @@ export class RoomDO {
 
     // Round timer: reset when time elapses
     if ((this.roundEndTime || 0) > 0 && now >= (this.roundEndTime as number)) {
+      // On round end, handle extraction banking for streamer
+      const s = [...this.players.values()].find(p => p.role === "streamer");
+      if (s) {
+        const active = this.extractions.find(e => (e.activeUntil || 0) > now);
+        if (active) {
+          const dist = Math.hypot((s.pos.x - active.x), (s.pos.y - active.y));
+          if (dist <= active.r) {
+            // Bank unbanked
+            s.banked = (s.banked || 0) + (s.score || 0);
+            s.score = 0;
+          } else {
+            // Did not extract: lose unbanked
+            s.score = 0;
+          }
+        } else {
+          // No active extraction at end: lose unbanked
+          s.score = 0;
+        }
+      }
+
       this.roundEndTime = now + this.roundDurationMs;
       this.bullets = [];
       this.pickups = [];
+      // Reset and respawn extractions (1–2 per round)
+      this.extractions = [];
+      this.spawnExtractions();
+      // Immediately rotate to set one active for the new round
+      this.rotateExtractionIfNeeded(now);
       for (const p of this.players.values()) {
         if (p.role === "streamer") {
           p.pos = { x: this.W / 2, y: this.H / 2 };
-          p.score = 0;
           p.alive = true;
           p.hp = p.maxHp ?? 100;
           p.weapon = "pistol";
@@ -2450,6 +2592,7 @@ export class RoomDO {
       bullets: this.bullets.map(b => ({ id: b.id, x: b.pos.x, y: b.pos.y, ownerId: b.ownerId })),
       walls: this.walls.map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h })),
       pickups: this.pickups.map(pk => ({ id: pk.id, type: pk.type, x: pk.x, y: pk.y })),
+      extractions: this.extractions.map(e => ({ id: e.id, x: e.x, y: e.y, r: e.r, activeUntil: e.activeUntil })),
       arena: { w: this.W, h: this.H },
       remainingTime: Math.max(0, Math.floor(((this.roundEndTime || Date.now()) - Date.now()) / 1000)),
       chatEnabled: this.chatEnabled,
@@ -2477,6 +2620,7 @@ export class RoomDO {
     y: p.pos.y,
     alive: p.alive,
     score: p.score,
+    banked: p.banked ?? 0,
     hp: p.hp ?? 0,
     boosted: (p.boostUntil || 0) > Date.now(),
     ammo: p.ammo ?? 0,
@@ -2619,6 +2763,39 @@ export class RoomDO {
     for (const p of this.pickups){ if (Math.hypot(x-p.x,y-p.y) < minD) return false; }
     return true;
   }
+
+  // M1: Extraction helpers
+  spawnExtractions() {
+    // Spawn 1–2 extraction zones at free positions
+    const count = 1 + Math.floor(Math.random() * 2);
+    const minDist = 80; // spacing between extractions
+    for (let i = 0; i < count; i++) {
+      const pos = this.randomFreePos(32);
+      if (!pos) continue;
+      // keep away from pickups a bit
+      if (!this.okDistanceFromPickups(pos.x, pos.y, 56)) continue;
+      // keep away from other extractions
+      let far = true;
+      for (const e of this.extractions) {
+        if (Math.hypot(e.x - pos.x, e.y - pos.y) < minDist) { far = false; break; }
+      }
+      if (!far) continue;
+      this.extractions.push({ id: crypto.randomUUID().slice(0,6), x: pos.x, y: pos.y, r: 28 });
+    }
+  }
+
+  rotateExtractionIfNeeded(nowMs: number) {
+    if (this.extractions.length === 0) return;
+    const active = this.extractions.find(e => (e.activeUntil || 0) > nowMs);
+    if (active) return;
+    // Choose a new extraction and set active window
+    const idx = Math.floor(Math.random() * this.extractions.length);
+    const dur = this.extractionMinMs + Math.floor(Math.random() * (this.extractionMaxMs - this.extractionMinMs + 1));
+    for (let i = 0; i < this.extractions.length; i++) this.extractions[i].activeUntil = undefined;
+    this.extractions[idx].activeUntil = nowMs + dur;
+    // Announce change
+    this.broadcast("notice", { message: "Extraction moved!" });
+  }
 }
 </file>
 
@@ -2707,26 +2884,6 @@ function getRegionFromRequest(req: Request): string {
 }
 
 export { RoomDO };
-</file>
-
-<file path="wrangler.toml">
-name = "arena-shooter"
-main = "src/worker.ts"
-compatibility_date = "2024-10-22"
-
-[[durable_objects.bindings]]
-name = "ROOMS"
-class_name = "RoomDO"
-
-[vars]
-TARKOV_NAMES = "KibaRogue,WoodsScav,ShorelineRat,FactoryGhost,LabsRunner,InterchangeChad,DormsGoblin,ReserveMole,FleaFlipper,TetrizHoarder,LedXHunter,SlickSeeker,RSASSEnjoyer,M995Enjoyer,GrenadierGoon,SanitarStan,KillaChaser,TagillaTapper,GluharGuy,ShturmanScout,KnightWatcher,RogueRaider,USECFriend,BEARBuddy,JaegerPal,FenceFella,TherapistAlly,RagmanRigger,SkierSlinger,PraporPatron,MechanicMain,PeacekeeperPro,LabsRat,MarkedRoomMole,StashGremlin,MoonshineMax,ScavJunkie,OmComEnjoyer,SJ6Sprinter,AltynAddict,ThermalAndy,GreenBatteryGuy,DormsKeyKing,GPUGoblin,AmmoArbiter,WaffleFilter"
-
-[assets]
-directory = "public"
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["RoomDO"]
 </file>
 
 </files>

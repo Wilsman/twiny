@@ -21,7 +21,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { height: 100dvh; }
 body {
   margin: 0;
   min-height: 100dvh;
@@ -66,13 +66,16 @@ body {
 .app {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: 1fr 300px;
   gap: 16px;
-  padding: 72px 16px 20px;
+  padding: 72px 20px 12px; /* match fixed topbar height space */
+  height: calc(100dvh - 72px);
+  overflow: hidden;
   align-items: start;
 }
-.main { min-width: 0; }
-.sidebar { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.main { min-width: 0; height: 100%; }
+.stage { height: 100%; }
+.sidebar { display: flex; flex-direction: column; gap: 12px; min-width: 0; height: 100%; overflow: auto; }
 
 @media (max-width: 1100px) {
   .app { grid-template-columns: 1fr; }
@@ -210,8 +213,10 @@ button[disabled] { opacity: .5; cursor: default; }
 
 /* ——— Canvas / stage ——— */
 .stage { display: grid; place-items: center; padding: 0; }
+.stage { display: grid; place-items: center; padding: 0; }
 canvas.arena {
   position: relative;
+  /* size is controlled by JS to fit container while preserving AR */
   outline: 1px solid rgba(255,255,255,.04);
   border-radius: 18px;
   background:
@@ -267,3 +272,5 @@ body.connected canvas.arena {
   transition: opacity .2s ease, transform .2s ease;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+/* Limit scrolling only on gameplay pages */
+body.game { overflow: hidden; }

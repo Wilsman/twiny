@@ -25,11 +25,43 @@ export function nameStorage() {
 
 export function minimalCanvas(w, h) {
   const c = document.createElement("canvas");
-  c.width = w; c.height = h; c.className = "arena";
+  c.className = "arena";
+
   let stage = document.querySelector('.stage');
   if (!stage) { stage = document.createElement('div'); stage.className = 'stage'; document.body.appendChild(stage); }
   stage.appendChild(c);
   const ctx = c.getContext("2d");
+
+  // DPI-aware internal resolution
+  const resize = () => {
+    // Fit canvas to parent (stage) while maintaining aspect ratio and avoiding overflow
+    const parent = c.parentElement || document.body;
+    const prect = parent.getBoundingClientRect();
+    const targetAR = w / h;
+    let cssW = prect.width;
+    let cssH = cssW / targetAR;
+    if (cssH > prect.height) {
+      cssH = prect.height;
+      cssW = cssH * targetAR;
+    }
+    c.style.width = cssW + 'px';
+    c.style.height = cssH + 'px';
+
+    const rect = c.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const targetW = Math.max(1, Math.floor(rect.width * dpr));
+    const targetH = Math.max(1, Math.floor(rect.height * dpr));
+    if (c.width !== targetW || c.height !== targetH) {
+      c.width = targetW; c.height = targetH;
+    }
+  };
+  const roCanvas = new ResizeObserver(() => resize());
+  const roParent = new ResizeObserver(() => resize());
+  roCanvas.observe(c);
+  roParent.observe(stage);
+  window.addEventListener('orientationchange', resize);
+  resize();
+
   // Capture keyboard focus so Space/Arrows don't trigger buttons/scroll
   c.tabIndex = 0;
   setTimeout(() => c.focus(), 0);
