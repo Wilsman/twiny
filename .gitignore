@@ -54,6 +54,7 @@ out/
 # Temporary folders
 tmp/
 temp/
+old-working/
 
 # Cache
 .cache/

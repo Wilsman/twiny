@@ -1,0 +1,2732 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: */old-working/*
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+AGENTS.md
+package.json
+public/common.js
+public/index.html
+public/join.html
+public/streamer.html
+public/styles.css
+README.md
+src/room.ts
+src/worker.ts
+wrangler.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="public/index.html">
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Streamer vs. Chat Zombies</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Arena Shooter</div>
+    <div class="middle-controls"></div>
+    <div class="right-controls"></div>
+  </div>
+
+  <div class="app" style="grid-template-columns: 1fr;">
+    <main class="main">
+      <div class="stage" style="min-height: 60vh;">
+        <div class="card" style="max-width: 680px; width: 100%;">
+          <div class="card-title">Streamer vs. Chat Zombies</div>
+          <div style="padding: 8px 4px;">
+            <h1 style="margin: 8px 0 16px; font-size: 28px;">Pick your role</h1>
+            <div class="row" style="margin-bottom: 14px;">
+              <a href="/streamer.html"><button style="font-size: 16px;">I am the Streamer</button></a>
+              <span class="tip">Create a room and share the link.</span>
+            </div>
+            <div class="row" style="align-items: stretch;">
+              <input id="joinInput" class="mono" placeholder="Paste room link or code (e.g. us-west-abc123)" />
+              <button id="joinBtn" style="font-size: 16px;">Join as Zombie</button>
+            </div>
+            <div class="tip" style="margin-top: 8px;">You can paste either a full join URL or just the room code.</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width: 680px; width: 100%; margin-top: 16px;">
+          <div class="card-title">Tutorial</div>
+          <div class="row small" style="align-items: flex-start;">
+            <div style="flex:1; min-width: 260px;">
+              <div style="margin-bottom: 8px;"><span class="pill streamer">🟢 Streamer</span></div>
+              <ul class="tip" style="margin: 0 0 0 18px;">
+                <li>WASD to move; mouse to aim.</li>
+                <li>Left click to shoot; right click or Q to swing bat.</li>
+                <li>Press 1/2/3 to switch Pistol/SMG/Shotgun.</li>
+                <li>Click “Create Room” and share the join link.</li>
+                <li>Use “Disable Chat” if things get spicy.</li>
+                <li>Toggle “Nerd Stats” for FPS/latency overlay.</li>
+                <li>Fullscreen recommended for best experience.</li>
+              </ul>
+            </div>
+            <div style="flex:1; min-width: 260px;">
+              <div style="margin-bottom: 8px;"><span class="pill zombie">🧟 Zombies</span></div>
+              <ul class="tip" style="margin: 0 0 0 18px;">
+                <li>WASD to shamble; no mouse needed.</li>
+                <li>Touch the streamer to drain their score.</li>
+                <li>Use the emote bar to cheer/taunt (🧟 💀 🔥 😂 ❤️ 💢).</li>
+                <li>Chat may be disabled by the streamer.</li>
+                <li>Stay persistent and overwhelm in numbers!</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    const input = document.getElementById('joinInput');
+    const joinBtn = document.getElementById('joinBtn');
+
+    function parseRoom(value) {
+      if (!value) return '';
+      value = value.trim();
+      try {
+        const u = new URL(value);
+        const fromQuery = u.searchParams.get('room');
+        if (fromQuery) return fromQuery;
+        // allow last path segment that looks like code
+        const seg = u.pathname.split('/').filter(Boolean).pop() || '';
+        if (/^[a-z0-9\-]{4,}$/.test(seg)) return seg;
+      } catch {}
+      // If not a URL, accept raw code
+      if (/^[a-z0-9\-]{4,}$/.test(value)) return value;
+      return '';
+    }
+
+    function goJoin() {
+      const code = parseRoom(input.value);
+      if (!code) { alert('Please paste a valid join link or room code.'); return; }
+      location.href = `/join.html?room=${encodeURIComponent(code)}`;
+    }
+
+    joinBtn.addEventListener('click', goJoin);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') goJoin(); });
+  </script>
+</body>
+</html>
+</file>
+
+<file path=".gitignore">
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Cloudflare Workers
+.wrangler/
+worker/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# Build outputs
+build/
+dist/
+out/
+
+# Temporary folders
+tmp/
+temp/
+old-working/
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Lock files (keep package-lock.json but ignore others)
+yarn.lock
+pnpm-lock.yaml
+</file>
+
+<file path="AGENTS.md">
+# Repository Guidelines
+
+This project is a minimal Cloudflare Worker + Durable Objects backend with static client files for a “Streamer vs. Chat Zombies” arena. Use this guide to navigate, develop, and contribute efficiently.
+
+## Project Structure & Module Organization
+- `src/worker.ts` — Worker entry (routes `/create`, `/ws/:room`).
+- `src/room.ts` — Durable Object logic and game loop.
+- `public/` — Static client: `streamer.html`, `join.html`, `common.js`, `styles.css`.
+- `wrangler.toml` — Worker config, DO binding, migrations, assets.
+- `README.md` — Run and deploy notes.
+
+## Build, Test, and Development Commands
+- `npx wrangler dev` — Run local dev server with DO and assets.
+- `npx wrangler deploy` — Deploy to Cloudflare.
+- Optional: `npm i -D wrangler` then `wrangler dev/deploy` via PATH.
+
+## Coding Style & Naming Conventions
+- Language: TypeScript for Worker/DO; plain JS/HTML/CSS for `public`.
+- Indentation: 2 spaces; keep lines concise and explicit.
+- Naming: TypeScript uses `camelCase` for vars/functions, `PascalCase` for classes (e.g., `RoomDO`). Static files use kebab-case (e.g., `streamer.html`).
+- Imports: prefer relative module paths within `src`.
+- Keep Worker code side-effect–free on import; initialize within handlers/constructors.
+
+## Testing Guidelines
+- No formal test harness included. Validate via `wrangler dev` and manual flows:
+  - Open `http://127.0.0.1:8787/streamer.html` ? Create Room.
+  - Join with `public/join.html?room=XXXXXX` in another tab.
+- If adding tests, colocate under `src/__tests__/` and use a lightweight runner (e.g., `vitest`) without changing runtime behavior.
+
+## Commit & Pull Request Guidelines
+- Commits: concise imperative subject, scoped changes (e.g., `room: cap zombies at 100`).
+- PRs: include purpose, screenshots/GIFs for UI changes, and steps to validate with `wrangler dev`. Link related issues and note any config changes in `wrangler.toml`.
+
+## Security & Configuration Tips
+- `wrangler.toml` contains `ROOMS` Durable Object binding and `TARKOV_NAMES` sample names. Add secrets via `wrangler secret put NAME` (do not commit secrets).
+- Expose only `/create` and `/ws/*` from the Worker; serve `public/` via Pages or Worker assets.
+- Sanitize/validate inputs in `room.ts`; keep server authoritative state and tick rate conservative.
+
+## Architecture Overview
+- Worker handles HTTP routes and WebSocket upgrades; a Room Durable Object instance owns room state and broadcasts at ~20Hz. Static pages connect to `/ws/:room` and render client controls.
+</file>
+
+<file path="package.json">
+{
+  "devDependencies": {
+    "wrangler": "^4.35.0"
+  }
+}
+</file>
+
+<file path="public/common.js">
+export function connect(roomId) {
+  let url;
+  if (typeof window !== 'undefined' && window.WORKER_ORIGIN) {
+    try {
+      const u = new URL(`/ws/${roomId}`, window.WORKER_ORIGIN);
+      u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+      url = u.href;
+    } catch {
+      // Fallback to same-origin if WORKER_ORIGIN is malformed
+    }
+  }
+  if (!url) {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    url = `${proto}://${location.host}/ws/${roomId}`;
+  }
+  return new WebSocket(url);
+}
+
+export function nameStorage() {
+  return {
+    get() { return localStorage.getItem("name") || ""; },
+    set(n) { localStorage.setItem("name", n); }
+  };
+}
+
+export function minimalCanvas(w, h) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h; c.className = "arena";
+  let stage = document.querySelector('.stage');
+  if (!stage) { stage = document.createElement('div'); stage.className = 'stage'; document.body.appendChild(stage); }
+  stage.appendChild(c);
+  const ctx = c.getContext("2d");
+  // Capture keyboard focus so Space/Arrows don't trigger buttons/scroll
+  c.tabIndex = 0;
+  setTimeout(() => c.focus(), 0);
+  c.addEventListener('pointerdown', () => c.focus());
+  return { c, ctx };
+}
+
+export function inputController(opts={ mouse:true }) {
+  const state = { up:false,down:false,left:false,right:false,shoot:false,melee:false,aimX:0,aimY:0 };
+  addEventListener("keydown", e => { if (e.repeat) return; if (e.key==="w"||e.key==="ArrowUp") state.up=true;
+    if (e.key==="s"||e.key==="ArrowDown") state.down=true; if (e.key==="a"||e.key==="ArrowLeft") state.left=true; if (e.key==="d"||e.key==="ArrowRight") state.right=true; if (e.key==="q"||e.key==="e") state.melee=true; });
+  addEventListener("keyup", e => { if (e.key==="w"||e.key==="ArrowUp") state.up=false;
+    if (e.key==="s"||e.key==="ArrowDown") state.down=false; if (e.key==="a"||e.key==="ArrowLeft") state.left=false; if (e.key==="d"||e.key==="ArrowRight") state.right=false; if (e.key==="q"||e.key==="e") state.melee=false; });
+  if (opts.mouse) {
+    addEventListener("mousemove", e => { const rect = document.querySelector("canvas.arena").getBoundingClientRect(); state.aimX = e.clientX - rect.left; state.aimY = e.clientY - rect.top; });
+    // Pointer/mouse shooting handling
+    addEventListener("mousedown", (e) => { if (e.button===0) state.shoot = true; if (e.button===2) { state.melee = true; e.preventDefault(); } });
+    addEventListener("mouseup", (e) => { if (e.button===0) state.shoot = false; if (e.button===2) { state.melee = false; e.preventDefault(); } });
+    // prevent context menu on canvas for right-click melee
+    document.addEventListener('contextmenu', (e) => {
+      const c = document.querySelector('canvas.arena');
+      if (c && c.contains(e.target)) e.preventDefault();
+    });
+    // Touch support (basic)
+    addEventListener("touchstart", (e) => { const t=e.touches[0]; const rect = document.querySelector("canvas.arena").getBoundingClientRect(); state.aimX=t.clientX-rect.left; state.aimY=t.clientY-rect.top; state.shoot=true; }, { passive:true });
+    addEventListener("touchend", () => { state.shoot=false; }, { passive:true });
+  }
+  const resetAll = () => { state.up=false; state.down=false; state.left=false; state.right=false; state.shoot=false; state.melee=false; };
+  addEventListener("blur", () => { resetAll(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) resetAll(); });
+  return state;
+}
+
+// Prevent browser defaults (scrolling / button activation) for game keys
+export function suppressPageHotkeys() {
+  window.addEventListener('keydown', (e) => {
+    const code = e.code;
+    const isGameKey = code === 'Space' || code === 'ArrowUp' || code === 'ArrowDown' || code === 'ArrowLeft' || code === 'ArrowRight' || e.key === ' ';
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute('contenteditable') === 'true');
+    if (isGameKey && !typing) {
+      e.preventDefault();
+    }
+  }, { capture: true });
+}
+
+// Client-side prediction for movement
+export function createPredictionSystem() {
+  let predictedPos = { x: 0, y: 0 };
+  let lastServerPos = { x: 0, y: 0 };
+  let lastServerTime = 0;
+  let inputHistory = [];
+  
+  return {
+    // Predict movement locally
+    predictMovement(input, dt) {
+      const speed = 200; // pixels per second
+      const dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+      const dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+      
+      // Normalize diagonal movement
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) {
+        predictedPos.x += (dx / len) * speed * dt;
+        predictedPos.y += (dy / len) * speed * dt;
+      }
+      
+      // Store input for reconciliation
+      inputHistory.push({
+        input: { ...input },
+        timestamp: performance.now(),
+        predictedPos: { ...predictedPos }
+      });
+      
+      // Keep only recent history (1 second)
+      const cutoff = performance.now() - 1000;
+      inputHistory = inputHistory.filter(h => h.timestamp > cutoff);
+      
+      return { ...predictedPos };
+    },
+    
+    // Reconcile with server state
+    reconcile(serverPos, serverTime) {
+      lastServerPos = { ...serverPos };
+      lastServerTime = serverTime;
+      
+      // Find inputs that happened after server state
+      const replayInputs = inputHistory.filter(h => h.timestamp > serverTime);
+      
+      // Reset to server position and replay inputs
+      predictedPos = { ...serverPos };
+      for (const h of replayInputs) {
+        const dt = 0.05; // Assume 50ms intervals
+        const speed = 200;
+        const dx = (h.input.right ? 1 : 0) - (h.input.left ? 1 : 0);
+        const dy = (h.input.down ? 1 : 0) - (h.input.up ? 1 : 0);
+        
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) {
+          predictedPos.x += (dx / len) * speed * dt;
+          predictedPos.y += (dy / len) * speed * dt;
+        }
+      }
+      
+      return { ...predictedPos };
+    },
+    
+    getCurrentPos() {
+      return { ...predictedPos };
+    },
+    
+    setPos(pos) {
+      predictedPos = { ...pos };
+    }
+  };
+}
+
+// Connection quality monitoring
+export function createLatencyMonitor(ws) {
+  let pingHistory = [];
+  let lastPingTime = 0;
+  
+  return {
+    sendPing() {
+      const now = performance.now();
+      lastPingTime = now;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping', timestamp: now }));
+      }
+    },
+    
+    handlePong(serverTimestamp) {
+      const now = performance.now();
+      const rtt = now - serverTimestamp;
+      pingHistory.push({ rtt, timestamp: now });
+      
+      // Keep only recent pings (30 seconds)
+      const cutoff = now - 30000;
+      pingHistory = pingHistory.filter(p => p.timestamp > cutoff);
+      
+      return rtt;
+    },
+    
+    getAverageLatency() {
+      if (pingHistory.length === 0) return 0;
+      const sum = pingHistory.reduce((acc, p) => acc + p.rtt, 0);
+      return sum / pingHistory.length;
+    },
+    
+    getLatencyStats() {
+      if (pingHistory.length === 0) return { avg: 0, min: 0, max: 0, jitter: 0 };
+      
+      const rtts = pingHistory.map(p => p.rtt);
+      const avg = rtts.reduce((a, b) => a + b) / rtts.length;
+      const min = Math.min(...rtts);
+      const max = Math.max(...rtts);
+      
+      // Calculate jitter (standard deviation)
+      const variance = rtts.reduce((acc, rtt) => acc + Math.pow(rtt - avg, 2), 0) / rtts.length;
+      const jitter = Math.sqrt(variance);
+      
+      return { avg, min, max, jitter };
+    }
+  };
+}
+
+// Minimal toast helper
+export function toast(msg, ms=1200) {
+  let t = document.querySelector('.toast');
+  if (!t) { t = document.createElement('div'); t.className='toast'; document.body.appendChild(t); }
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._hide);
+  t._hide = setTimeout(()=>t.classList.remove('show'), ms);
+}
+</file>
+
+<file path="public/join.html">
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arena Shooter — Join as Zombie</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Arena Shooter</div>
+    <div class="middle-controls">
+      <span class="badge" id="status" data-state="disconnected">disconnected</span>
+    </div>
+    <div class="right-controls">
+      <button id="fullscreen">Fullscreen</button>
+      <button id="nerdToggle">Nerd Stats</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="main">
+      <div class="stage"></div>
+    </div>
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">Join</div>
+        <div class="row">
+          <label for="name" class="badge">Name</label>
+          <input id="name" />
+        </div>
+        <div class="row">
+          <button id="shuffle">Random</button>
+          <button id="join">Join</button>
+          <span class="badge" id="timer">Time: --</span>
+        </div>
+        <div class="tip">WASD to move. You are a slow zombie; touch the streamer to drain their score.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Emotes</div>
+        <div id="emoteBar">
+          <button class="emote">🧟</button>
+          <button class="emote">💀</button>
+          <button class="emote">🔥</button>
+          <button class="emote">😂</button>
+          <button class="emote">❤️</button>
+          <button class="emote">💢</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Players</div>
+        <div class="pill-list" id="players"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Chat</div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="row"><input id="chatInput" placeholder="Chat..." /></div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module">
+    import { connect, nameStorage, minimalCanvas, suppressPageHotkeys, inputController, createLatencyMonitor } from '/common.js';
+
+    const params = new URLSearchParams(location.search);
+    const roomId = params.get('room');
+
+    const { c, ctx } = minimalCanvas(960, 540);
+    suppressPageHotkeys();
+    let ws, arena={w:960,h:540};
+    let state = { players:[], bullets:[], arena, remainingTime: 0 };
+    const input = inputController({ mouse:false });
+    const effects = [];
+    let prevBulletPos = new Map();
+
+    const status = document.getElementById('status');
+    const playersEl = document.getElementById('players');
+    const nameEl = document.getElementById('name');
+    const joinBtn = document.getElementById('join');
+    const shuffleBtn = document.getElementById('shuffle');
+    const timerEl = document.getElementById('timer');
+    const emoteBar = document.getElementById('emoteBar');
+    const chatInput = document.getElementById('chatInput');
+    const chatMessagesEl = document.getElementById('chatMessages');
+    const nerdToggleBtn = document.getElementById('nerdToggle');
+    // Nerd panel overlay element
+    const nerdPanel = document.createElement('div');
+    nerdPanel.id = 'nerdPanel';
+    nerdPanel.className = 'nerd-panel hidden mono';
+    document.body.appendChild(nerdPanel);
+
+    let nerdOn = localStorage.getItem('nerdStats') === '1';
+    function setNerd(on){
+      nerdOn = !!on;
+      localStorage.setItem('nerdStats', nerdOn ? '1' : '0');
+      nerdPanel.classList.toggle('hidden', !nerdOn);
+      nerdToggleBtn.classList.toggle('active', nerdOn);
+    }
+    setNerd(nerdOn);
+    nerdToggleBtn.onclick = () => setNerd(!nerdOn);
+
+    // preload name
+    nameEl.value = nameStorage().get() || '';
+
+    function randomName(){
+      const pool = ("KibaRogue,WoodsScav,ShorelineRat,FactoryGhost,LabsRunner,InterchangeChad,DormsGoblin,ReserveMole,FleaFlipper,TetrizHoarder,LedXHunter,SlickSeeker,RSASSEnjoyer,M995Enjoyer,GrenadierGoon,SanitarStan,KillaChaser,TagillaTapper,GluharGuy,ShturmanScout,KnightWatcher,RogueRaider,USECFriend,BEARBuddy,JaegerPal,FenceFella,TherapistAlly,RagmanRigger,SkierSlinger,PraporPatron,MechanicMain,PeacekeeperPro,LabsRat,MarkedRoomMole,StashGremlin,MoonshineMax,ScavJunkie,OmComEnjoyer,SJ6Sprinter,AltynAddict,ThermalAndy,GreenBatteryGuy,DormsKeyKing,GPUGoblin,AmmoArbiter,WaffleFilter").split(",");
+      return pool[Math.floor(Math.random()*pool.length)];
+    }
+
+    document.getElementById('shuffle').onclick = (ev) => { nameEl.value = randomName(); if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); };
+
+    function sendChat(msg) {
+      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'chat', message: msg }));
+    }
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && chatInput.value.trim()) {
+        sendChat(chatInput.value.trim());
+        chatInput.value = '';
+      }
+    });
+
+    function appendChat(from, message) {
+      chatMessagesEl.innerHTML += `<div>${from}: ${message}</div>`;
+      while (chatMessagesEl.children.length > 10) {
+        chatMessagesEl.removeChild(chatMessagesEl.firstChild);
+      }
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    }
+
+    let sendNeutralHandler = null; let visHandler = null; let inputIv = null;
+    let pingIv = null; let latency = null; let stateMsgCount = 0; let statesPerSec = 0; let lastStateRateAt = performance.now();
+    function leave(){
+      if (ws) { try { if (ws.readyState===1) ws.close(1000,'leave'); } catch{} ws=null; }
+      status.textContent = 'disconnected';
+      status.dataset.state = 'disconnected';
+      document.body.classList.remove('connected');
+      joinBtn.textContent = 'Join';
+      nameEl.disabled = false; shuffleBtn.disabled = false;
+      if (inputIv) { clearInterval(inputIv); inputIv = null; }
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
+      if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler=null; }
+      if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler=null; }
+    }
+
+    joinBtn.onclick = (ev) => {
+      if (ws && ws.readyState===1) { leave(); return; }
+      if (!roomId) { alert('Missing room id'); return; }
+      const name = (nameEl.value||'').slice(0,20);
+      nameStorage().set(name);
+      if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur();
+      ws = connect(roomId);
+      ws.addEventListener('open', () => {
+        status.textContent = 'connected';
+        status.dataset.state = 'connected';
+        document.body.classList.add('connected');
+        ws.send(JSON.stringify({ type:'join_room', role:'zombie', name }));
+        joinBtn.textContent = 'Leave';
+        nameEl.disabled = true; shuffleBtn.disabled = true;
+      });
+      latency = createLatencyMonitor(ws);
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
+      pingIv = setInterval(() => { try { latency.sendPing(); } catch {} }, 1000);
+      ws.addEventListener('message', (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'joined') { arena = msg.arena; }
+        if (msg.type === 'state') {
+          stateMsgCount++;
+          // impact effects
+          const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
+          for (const [id,pos] of prevBulletPos){ if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220}); }
+          prevBulletPos = curMap;
+
+          state = msg; const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
+          status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`; 
+          status.dataset.state = 'connected';
+          state.remainingTime = msg.remainingTime;
+          updateTimer(state.remainingTime);
+          updatePlayerList(msg.players);
+          // Respect chat enabled/disabled from server
+          if (typeof msg.chatEnabled === 'boolean') {
+            chatInput.disabled = !msg.chatEnabled;
+            chatInput.placeholder = msg.chatEnabled ? 'Chat...' : 'Chat disabled by streamer';
+            const chatCard = chatMessagesEl.closest('.card');
+          if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
+          }
+        }
+        if (msg.type === 'pong') {
+          if (latency) latency.handlePong(Number(msg.timestamp)||0);
+        }
+        if (msg.type === 'chat') {
+          appendChat(msg.from, msg.message);
+        }
+        if (msg.type === 'notice') {
+          appendChat('System', msg.message);
+        }
+      });
+      // Send continuous movement state for smooth input like streamer
+      inputIv = setInterval(() => {
+        if (ws && ws.readyState===1) {
+          const { up,down,left,right } = input;
+          ws.send(JSON.stringify({ type:'input', up, down, left, right, shoot:false, aimX:0, aimY:0 }));
+        }
+      }, 50);
+
+      // If the tab loses focus while holding a key, send a neutral input
+      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, aimX:0, aimY:0 })); };
+      visHandler = () => { if (document.hidden) sendNeutralHandler(); };
+      window.addEventListener('blur', sendNeutralHandler);
+      document.addEventListener('visibilitychange', visHandler);
+
+      ws.addEventListener('close', () => { leave(); }, { once: true });
+    };
+
+    // Emote palette: send selected emoji to server (zombies only)
+    emoteBar.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!target || !(target instanceof HTMLElement) || !target.classList.contains('emote')) return;
+      const symbol = target.textContent || '';
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'emote', symbol }));
+    });
+
+    function draw(dt=16){
+      ctx.clearRect(0,0, c.width, c.height);
+      // Fill background with solid dark color
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0,0, c.width, c.height);
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#808080';
+      ctx.strokeRect(1,1,c.width-2,c.height-2);
+      // Walls/rooms
+      if (state.walls){
+        ctx.fillStyle = '#FFFFFF';
+        for (const w of state.walls){ ctx.fillRect(w.x,w.y,w.w,w.h); }
+      }
+      // Pickups
+      if (state.pickups){
+        for (const pk of state.pickups){
+          ctx.save();
+          ctx.shadowColor = 'rgba(255,255,255,.18)'; ctx.shadowBlur = 8;
+          if (pk.type==='health'){
+            ctx.strokeStyle = '#66bb6a'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-8, pk.y-8, 16, 16);
+            ctx.beginPath(); ctx.moveTo(pk.x-6, pk.y); ctx.lineTo(pk.x+6, pk.y); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='speed') {
+            ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(pk.x-5, pk.y-8); ctx.lineTo(pk.x+2, pk.y-2); ctx.lineTo(pk.x-2, pk.y-2); ctx.lineTo(pk.x+5, pk.y+8); ctx.stroke();
+          } else if (pk.type==='ammo') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-7, pk.y-5, 14, 10);
+            ctx.beginPath(); ctx.moveTo(pk.x-4, pk.y+1); ctx.lineTo(pk.x-4, pk.y-1); ctx.moveTo(pk.x, pk.y+1); ctx.lineTo(pk.x, pk.y-1); ctx.moveTo(pk.x+4, pk.y+1); ctx.lineTo(pk.x+4, pk.y-1); ctx.stroke();
+          } else if (pk.type==='weapon') {
+            ctx.strokeStyle = '#ffa726'; ctx.beginPath(); ctx.moveTo(pk.x-6,pk.y); ctx.lineTo(pk.x,pk.y-8); ctx.lineTo(pk.x+2,pk.y-2); ctx.lineTo(pk.x+8,pk.y-2); ctx.lineTo(pk.x,pk.y+8); ctx.lineTo(pk.x+2,pk.y+2); ctx.lineTo(pk.x-6,pk.y); ctx.stroke();
+          } else if (pk.type==='shield') {
+            ctx.strokeStyle = '#26c6da'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 9, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='magnet') {
+            ctx.strokeStyle = '#ab47bc'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pk.x-3, pk.y, 6, -Math.PI/2, Math.PI/2);
+            ctx.arc(pk.x+3, pk.y, 6, Math.PI/2, -Math.PI/2);
+            ctx.stroke();
+          } else if (pk.type==='freeze') {
+            ctx.strokeStyle = '#90caf9'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(pk.x, pk.y-7); ctx.lineTo(pk.x, pk.y+7);
+            ctx.moveTo(pk.x-7, pk.y); ctx.lineTo(pk.x+7, pk.y);
+            ctx.moveTo(pk.x-5, pk.y-5); ctx.lineTo(pk.x+5, pk.y+5);
+            ctx.moveTo(pk.x-5, pk.y+5); ctx.lineTo(pk.x+5, pk.y-5);
+            ctx.stroke();
+          } else if (pk.type==='blast') {
+            ctx.strokeStyle = '#ff7043'; ctx.lineWidth = 2;
+            for (let i=0;i<8;i++){ const a=i*Math.PI/4; ctx.beginPath(); ctx.moveTo(pk.x+Math.cos(a)*3, pk.y+Math.sin(a)*3); ctx.lineTo(pk.x+Math.cos(a)*10, pk.y+Math.sin(a)*10); ctx.stroke(); }
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.stroke();
+          } else if (pk.type==='treasure') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2;
+            ctx.strokeRect(pk.x-8, pk.y-6, 16, 12);
+            ctx.beginPath(); ctx.moveTo(pk.x-8, pk.y-2); ctx.lineTo(pk.x+8, pk.y-2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(pk.x, pk.y+1, 2, 0, Math.PI*2); ctx.stroke();
+          }
+          // label under pickup
+          ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.fill(); ctx.restore();
+          ctx.fillStyle = '#cfd8dc'; ctx.globalAlpha = 0.95;
+          const labelMap = { health:'HEALTH', speed:'SPEED', ammo:'AMMO', weapon:'WEAPON', shield:'SHIELD', magnet:'MAGNET', freeze:'FREEZE', blast:'BLAST', treasure:'TREASURE' };
+          const lbl = labelMap[pk.type] || String(pk.type).toUpperCase();
+          if (lbl) ctx.fillText(lbl, pk.x, pk.y + 14);
+          ctx.restore();
+        }
+        ctx.lineWidth = 1;
+      }
+      // Bullets
+      ctx.fillStyle = '#ffd54f';
+      for (const b of state.bullets){
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,213,79,.6)';
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      // Bullet impact effects
+      for (let i=effects.length-1;i>=0;i--){ const e=effects[i]; e.ttl-=dt; if (e.ttl<=0){ effects.splice(i,1); continue; } ctx.save(); const a=Math.max(0,e.ttl/220); ctx.globalAlpha=a; ctx.strokeStyle='#ffd54f'; ctx.beginPath(); ctx.arc(e.x,e.y,(1-a)*12+2,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+      // Players
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      for (const p of state.players){
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 0;
+        if (p.role==='streamer'){
+          ctx.strokeStyle = '#4caf50';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.stroke();
+          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+        } else {
+          ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
+          ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
+          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.8; ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+          ctx.fillStyle = '#e57373'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+          // Emote above zombie head for 5s
+          if (p.emote && (p.emoteUntil||0) > Date.now()){
+            ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+            ctx.globalAlpha = 1;
+            ctx.fillText(p.emote, p.x, p.y - 32);
+            ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          }
+        }
+        // Bat swing arc visual (short-lived)
+        const swingAge = (state.t||Date.now()) - (p.meleeAt||0);
+        if (swingAge >= 0 && swingAge < 220) {
+          const alpha = 1 - (swingAge / 220);
+          const ang = Math.atan2(p.meleeDirY||0, p.meleeDirX||1);
+          const span = Math.PI / 1.8; // ~100°
+          const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.cos(ang - span/2)*r0, p.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(p.x, p.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(p.x + Math.cos(ang + span/2)*r0, p.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(p.x, p.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+    }
+
+    function updatePlayerList(players){
+      playersEl.innerHTML = players.map(p=>`<span class="pill ${p.role}">${p.role==='streamer'?'🟢':'🧟'} ${p.name}${p.role==='streamer'?' · '+p.score:''}</span>`).join(' ');
+    }
+
+    function updateTimer(seconds) {
+      const min = Math.floor(seconds / 60);
+      const sec = seconds % 60;
+      timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    // Animation loop + nerd stats
+    let last = performance.now();
+    const fpsSamples = [];
+    const fpsWindow = 120; // ~2s at 60fps
+    let lastNerdUpdate = 0;
+    function loop(){
+      const now=performance.now(); const dt=now-last; last=now; draw(dt);
+      const fps = dt>0 ? 1000/dt : 0; fpsSamples.push(fps); if (fpsSamples.length>fpsWindow) fpsSamples.shift();
+      if (now - lastStateRateAt >= 1000){ statesPerSec = stateMsgCount; stateMsgCount = 0; lastStateRateAt = now; }
+      if (nerdOn && now - lastNerdUpdate > 250){
+        const avgFps = fpsSamples.length ? (fpsSamples.reduce((a,b)=>a+b,0)/fpsSamples.length) : 0;
+        const minFps = fpsSamples.length ? Math.min(...fpsSamples) : 0;
+        const maxFps = fpsSamples.length ? Math.max(...fpsSamples) : 0;
+        const lat = latency ? latency.getLatencyStats() : { avg:0, min:0, max:0, jitter:0 };
+        const players = state.players?.length||0;
+        const zombies = state.players?.filter(p=>p.role==='zombie').length||0;
+        const bullets = state.bullets?.length||0;
+        const pickups = state.pickups?.length||0;
+        const walls = state.walls?.length||0;
+        const wsBuf = ws && ws.bufferedAmount || 0;
+        nerdPanel.innerHTML = `
+          <div><strong>Nerd Stats</strong></div>
+          <div>FPS: ${avgFps.toFixed(1)} (min ${minFps.toFixed(0)} max ${maxFps.toFixed(0)})</div>
+          <div>Latency: ${lat.avg.toFixed(1)} ms (min ${lat.min.toFixed(0)} max ${lat.max.toFixed(0)}) jitter ${lat.jitter.toFixed(1)} ms</div>
+          <div>States/s: ${statesPerSec.toFixed(0)}</div>
+          <div>Entities: players ${players} (z ${zombies}) bullets ${bullets} pickups ${pickups} walls ${walls}</div>
+          <div>WS buf: ${wsBuf}</div>
+        `;
+        lastNerdUpdate = now;
+      }
+      requestAnimationFrame(loop);
+    }
+    loop();
+
+    // Fullscreen
+    document.getElementById('fullscreen').onclick = async () => {
+      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen().catch(()=>{}); }
+      else { await document.exitFullscreen().catch(()=>{}); }
+    };
+  </script>
+</body>
+</html>
+</file>
+
+<file path="public/streamer.html">
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arena Shooter â€” Streamer</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Arena Shooter</div>
+    <div class="middle-controls">
+      <span class="badge" id="status" data-state="disconnected">disconnected</span>
+    </div>
+    <div class="right-controls">
+      <button id="fullscreen">Fullscreen</button>
+      <button id="nerdToggle">Nerd Stats</button>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="main">
+      <div class="stage"></div>
+    </div>
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">Session</div>
+        <div class="row">
+          <button id="newRoom">Create Room</button>
+          <button id="toggleChat" disabled>Disable Chat</button>
+        </div>
+        <div class="row">
+          <input id="roomLink" class="mono" placeholder="Join link" readonly />
+          <button id="copy" disabled>Copy Link</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Weapons</div>
+        <div class="row">
+          <button class="weapon" data-weapon="pistol">Pistol (1)</button>
+          <button class="weapon" data-weapon="smg">SMG (2)</button>
+          <button class="weapon" data-weapon="shotgun">Shotgun (3)</button>
+        </div>
+        <div class="tip">Right-click or Q to swing bat.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Stats</div>
+        <div class="row">
+          <span class="badge">Score: <span id="score">0</span></span>
+          <span class="badge">HP: <span id="hp">100</span></span>
+          <span class="badge">Weapon: <span id="weapon">pistol</span></span>
+          <span class="badge">Ammo: <span id="ammo">0</span></span>
+          <span class="badge" id="timer">Time: --</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Players</div>
+        <div class="pill-list" id="players"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Chat</div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="row"><input id="chatInput" placeholder="Chat..." /></div>
+      </div>
+    </aside>
+  </div>
+  <div class="hit-flash" id="flash"></div>
+
+  <script type="module">
+    import { connect, nameStorage, minimalCanvas, inputController, suppressPageHotkeys, toast, createLatencyMonitor } from '/common.js';
+
+    const create = async () => {
+      const res = await fetch('/create', { method:'POST' });
+      const { roomId } = await res.json();
+      return roomId;
+    };
+
+    const { c, ctx } = minimalCanvas(960, 540);
+    document.querySelector('.stage').appendChild(c);
+    suppressPageHotkeys();
+    const input = inputController();
+
+    let ws, roomId, playerId, arena={w:960,h:540};
+    let state = { players:[], bullets:[], arena, remainingTime: 0 };
+    let lastHp = 100;
+    let lastStateTime = performance.now();
+    let lastScore = 0;
+    const effects = []; // bullet impacts etc {x,y,ttl}
+    let prevBulletPos = new Map();
+    // Local melee feedback (client-side prediction so streamer sees instantly)
+    let localMeleeAt = 0; let localMeleeDirX = 1; let localMeleeDirY = 0; let prevMelee = false;
+
+    const link = document.getElementById('roomLink');
+    const status = document.getElementById('status');
+    const scoreEl = document.getElementById('score');
+    const hpEl = document.getElementById('hp');
+    const ammoEl = document.getElementById('ammo');
+    const weaponEl = document.getElementById('weapon');
+    const playersEl = document.getElementById('players');
+    const flashEl = document.getElementById('flash');
+    const newBtn = document.getElementById('newRoom');
+    const copyBtn = document.getElementById('copy');
+    const timerEl = document.getElementById('timer');
+    const chatMessagesEl = document.getElementById('chatMessages');
+    const chatInput = document.getElementById('chatInput');
+    const toggleChatBtn = document.getElementById('toggleChat');
+    const nerdToggleBtn = document.getElementById('nerdToggle');
+    // Nerd panel overlay element
+    const nerdPanel = document.createElement('div');
+    nerdPanel.id = 'nerdPanel';
+    nerdPanel.className = 'nerd-panel hidden mono';
+    document.body.appendChild(nerdPanel);
+
+    let nerdOn = localStorage.getItem('nerdStats') === '1';
+    function setNerd(on){
+      nerdOn = !!on;
+      localStorage.setItem('nerdStats', nerdOn ? '1' : '0');
+      nerdPanel.classList.toggle('hidden', !nerdOn);
+      nerdToggleBtn.classList.toggle('active', nerdOn);
+    }
+    setNerd(nerdOn);
+    nerdToggleBtn.onclick = () => setNerd(!nerdOn);
+    copyBtn.disabled = true;
+    // Camera: smooth, mouse-biased, no manual control
+    let camX = 0, camY = 0; // top-left of viewport in world space
+    const zoom = 2; // >1 zooms in for tighter FOV
+    const mouseBias = 110; // world px to bias toward aim  
+    const camLerpBase = 0.05; // smoothing factor per frame higher = faster
+
+    let inputIv = null;
+    let sendNeutralHandler = null;
+    let visHandler = null;
+
+    let pingIv = null; let latency = null; let stateMsgCount = 0; let statesPerSec = 0; let lastStateRateAt = performance.now();
+    async function boot() {
+      if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+      roomId = await create();
+      const url = `${location.origin}/join.html?room=${roomId}`;
+      link.value = url;
+      copyBtn.disabled = false;
+      copyBtn.onclick = () => { navigator.clipboard.writeText(url); toast('Join link copied'); copyBtn.textContent = 'Copied!'; setTimeout(()=>copyBtn.textContent='Copy Link',800); };
+
+      ws = connect(roomId);
+      ws.addEventListener('open', () => {
+        status.textContent = 'connected';
+        status.dataset.state = 'connected';
+        document.body.classList.add('connected');
+        const name = nameStorage().get() || 'Marine';
+        ws.send(JSON.stringify({ type:'join_room', role:'streamer', name }));
+        newBtn.textContent = 'End Session';
+        toggleChatBtn.disabled = false;
+      });
+      latency = createLatencyMonitor(ws);
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
+      pingIv = setInterval(() => { try { latency.sendPing(); } catch {} }, 1000);
+
+      ws.addEventListener('message', (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'joined') { playerId = msg.playerId; arena = msg.arena; }
+        if (msg.type === 'state') {
+          stateMsgCount++;
+          // detect removed bullets for small impact effect
+          const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
+          for (const [id,pos] of prevBulletPos){
+            if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220});
+          }
+          prevBulletPos = curMap;
+
+          state = msg;
+          const me = msg.players.find(p=>p.id===playerId);
+          if (me) {
+            scoreEl.textContent = me.score;
+            hpEl.textContent = (me.hp ?? 0);
+            const w = me.weapon || 'pistol';
+            weaponEl.textContent = w;
+            let ammo = 0;
+            if (w==='pistol') ammo = me.pistolAmmo ?? 0;
+            else if (w==='smg') ammo = me.smgAmmo ?? 0;
+            else if (w==='shotgun') ammo = me.shotgunAmmo ?? 0;
+            else ammo = 0;
+            ammoEl.textContent = ammo;
+          }
+          const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
+          status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
+          status.dataset.state = 'connected';
+          state.remainingTime = msg.remainingTime;
+          updateTimer(state.remainingTime);
+          updatePlayerList(msg.players);
+          // Update chat toggle button label from state
+          if (typeof msg.chatEnabled === 'boolean') {
+            toggleChatBtn.textContent = msg.chatEnabled ? 'Disable Chat' : 'Enable Chat';
+            // Hide chat card and disable input when chat is disabled
+            chatInput.disabled = !msg.chatEnabled;
+            chatInput.placeholder = msg.chatEnabled ? 'Chat...' : 'Chat disabled by streamer';
+            const chatCard = chatMessagesEl.closest('.card');
+            if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
+          }
+          if (me && (me.hp ?? 0) < lastHp){ flash(); }
+          lastScore = me?me.score:lastScore;
+          lastHp = me?(me.hp ?? lastHp):lastHp;
+          lastStateTime = performance.now();
+        }
+        if (msg.type === 'pong') {
+          if (latency) latency.handlePong(Number(msg.timestamp)||0);
+        }
+        if (msg.type === 'chat') {
+          appendChat(msg.from, msg.message);
+        }
+        if (msg.type === 'notice') {
+          try { toast(msg.message); } catch {}
+          appendChat('System', msg.message);
+        }
+      });
+      inputIv = setInterval(() => {
+        if (ws && ws.readyState===1) {
+          // Convert screen aim to world coordinates via camera + zoom
+          const aimWX = camX + (input.aimX / zoom);
+          const aimWY = camY + (input.aimY / zoom);
+          ws.send(JSON.stringify({ type:'input', up:input.up, down:input.down, left:input.left, right:input.right, shoot:input.shoot, melee:input.melee, aimX:aimWX, aimY:aimWY }));
+        }
+      }, 50);
+
+      // If focus is lost, immediately send a neutral input (interval covers it, but faster feedback helps)
+      sendNeutralHandler = () => {
+        if (ws && ws.readyState===1) {
+          const aimWX = camX + (input.aimX / zoom);
+          const aimWY = camY + (input.aimY / zoom);
+          ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, aimX:aimWX, aimY:aimWY }));
+        }
+      };
+      visHandler = () => { if (document.hidden) sendNeutralHandler(); };
+      window.addEventListener('blur', sendNeutralHandler);
+      document.addEventListener('visibilitychange', visHandler);
+
+      const onClose = () => { leaveRoom(false); };
+      ws.addEventListener('close', onClose, { once: true });
+    }
+
+    function leaveRoom(manual=true){
+      if (inputIv) { clearInterval(inputIv); inputIv = null; }
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
+      if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler = null; }
+      if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler = null; }
+      if (ws) { try { if (manual && ws.readyState===1) ws.close(1000,'leave'); } catch {} ws = null; }
+      status.textContent = 'disconnected';
+      status.dataset.state = 'disconnected';
+      document.body.classList.remove('connected');
+      newBtn.textContent = 'Create Room';
+      copyBtn.disabled = true; link.value = '';
+      toggleChatBtn.disabled = true; toggleChatBtn.textContent = 'Disable Chat';
+      playerId = null; prevBulletPos = new Map(); effects.length = 0; lastScore = 0; lastHp = 100;
+      state = { players:[], bullets:[], arena };
+      updatePlayerList([]);
+    }
+
+    function draw(dt=16){
+      ctx.clearRect(0,0, c.width, c.height);
+      // Fill background with solid dark color
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0,0, c.width, c.height);
+      // Update camera target (follow player with slight mouse bias)
+      const meCam = state.players.find(p=>p.id===playerId);
+      if (meCam) {
+        const aimWX = camX + (input.aimX / zoom);
+        const aimWY = camY + (input.aimY / zoom);
+        const dx = aimWX - meCam.x, dy = aimWY - meCam.y; const d = Math.hypot(dx,dy) || 1;
+        const offX = (dx/d) * mouseBias, offY = (dy/d) * mouseBias;
+        const viewW = c.width / zoom, viewH = c.height / zoom;
+        const targetX = Math.min(Math.max(0, (meCam.x + offX) - viewW/2), Math.max(0, arena.w - viewW));
+        const targetY = Math.min(Math.max(0, (meCam.y + offY) - viewH/2), Math.max(0, arena.h - viewH));
+        const k = Math.min(1, (dt/16) * camLerpBase);
+        camX = camX + (targetX - camX) * k;
+        camY = camY + (targetY - camY) * k;
+      }
+      // Begin world transform
+      ctx.save();
+      ctx.scale(zoom, zoom);
+      ctx.translate(-camX, -camY);
+      // Walls/rooms
+      if (state.walls){
+        ctx.fillStyle = '#FFFFFF';
+        for (const w of state.walls){ ctx.fillRect(w.x, w.y, w.w, w.h); }
+      }
+      // Pickups
+      if (state.pickups){
+        for (const pk of state.pickups){
+          ctx.save();
+          ctx.shadowColor = 'rgba(255,255,255,.16)'; ctx.shadowBlur = 8;
+          if (pk.type==='health'){
+            ctx.strokeStyle = '#66bb6a'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-8, pk.y-8, 16, 16);
+            ctx.beginPath(); ctx.moveTo(pk.x-6, pk.y); ctx.lineTo(pk.x+6, pk.y); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='speed') {
+            ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(pk.x-5, pk.y-8); ctx.lineTo(pk.x+2, pk.y-2); ctx.lineTo(pk.x-2, pk.y-2); ctx.lineTo(pk.x+5, pk.y+8); ctx.stroke();
+          } else if (pk.type==='ammo') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2; ctx.strokeRect(pk.x-7, pk.y-5, 14, 10);
+            ctx.beginPath(); ctx.moveTo(pk.x-4, pk.y+1); ctx.lineTo(pk.x-4, pk.y-1); ctx.moveTo(pk.x, pk.y+1); ctx.lineTo(pk.x, pk.y-1); ctx.moveTo(pk.x+4, pk.y+1); ctx.lineTo(pk.x+4, pk.y-1); ctx.stroke();
+          } else if (pk.type==='weapon') {
+            ctx.strokeStyle = '#ffa726'; ctx.beginPath(); ctx.moveTo(pk.x-6,pk.y); ctx.lineTo(pk.x,pk.y-8); ctx.lineTo(pk.x+2,pk.y-2); ctx.lineTo(pk.x+8,pk.y-2); ctx.lineTo(pk.x,pk.y+8); ctx.lineTo(pk.x+2,pk.y+2); ctx.lineTo(pk.x-6,pk.y); ctx.stroke();
+          }
+          
+          else if (pk.type==='shield') {
+            ctx.strokeStyle = '#26c6da'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 9, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(pk.x, pk.y-6); ctx.lineTo(pk.x, pk.y+6); ctx.stroke();
+          } else if (pk.type==='magnet') {
+            ctx.strokeStyle = '#ab47bc'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pk.x-3, pk.y, 6, -Math.PI/2, Math.PI/2);
+            ctx.arc(pk.x+3, pk.y, 6, Math.PI/2, -Math.PI/2);
+            ctx.stroke();
+          } else if (pk.type==='freeze') {
+            ctx.strokeStyle = '#90caf9'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(pk.x, pk.y-7); ctx.lineTo(pk.x, pk.y+7);
+            ctx.moveTo(pk.x-7, pk.y); ctx.lineTo(pk.x+7, pk.y);
+            ctx.moveTo(pk.x-5, pk.y-5); ctx.lineTo(pk.x+5, pk.y+5);
+            ctx.moveTo(pk.x-5, pk.y+5); ctx.lineTo(pk.x+5, pk.y-5);
+            ctx.stroke();
+          } else if (pk.type==='blast') {
+            ctx.strokeStyle = '#ff7043'; ctx.lineWidth = 2;
+            for (let i=0;i<8;i++){ const a=i*Math.PI/4; ctx.beginPath(); ctx.moveTo(pk.x+Math.cos(a)*3, pk.y+Math.sin(a)*3); ctx.lineTo(pk.x+Math.cos(a)*10, pk.y+Math.sin(a)*10); ctx.stroke(); }
+            ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.stroke();
+          } else if (pk.type==='treasure') {
+            ctx.strokeStyle = '#ffd54f'; ctx.lineWidth = 2;
+            ctx.strokeRect(pk.x-8, pk.y-6, 16, 12);
+            ctx.beginPath(); ctx.moveTo(pk.x-8, pk.y-2); ctx.lineTo(pk.x+8, pk.y-2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(pk.x, pk.y+1, 2, 0, Math.PI*2); ctx.stroke();
+          }
+                    // label under pickup
+          ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.fill(); ctx.restore();
+          ctx.fillStyle = '#cfd8dc'; ctx.globalAlpha = 0.95;
+          const labelMap = { health:'HEALTH', speed:'SPEED', ammo:'AMMO', weapon:'WEAPON', shield:'SHIELD', magnet:'MAGNET', freeze:'FREEZE', blast:'BLAST', treasure:'TREASURE' };
+          const lbl = labelMap[pk.type] || String(pk.type).toUpperCase();
+          if (lbl) ctx.fillText(lbl, pk.x, pk.y + 14);
+          ctx.restore();
+        }
+        ctx.lineWidth = 1;
+      }
+      // Bullets
+      ctx.fillStyle = '#ffd54f';
+      for (const b of state.bullets){
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,213,79,.6)';
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      // Bullet impact effects
+      for (let i=effects.length-1;i>=0;i--){ 
+        const e=effects[i]; 
+        e.ttl-=dt; 
+        if (e.ttl<=0){ 
+          effects.splice(i,1); 
+          continue; 
+        }
+        ctx.save(); 
+        const a=Math.max(0, e.ttl/220); 
+        ctx.globalAlpha = a; 
+        ctx.strokeStyle = '#ffd54f'; 
+        ctx.beginPath(); 
+        ctx.arc(e.x,e.y,(1-a)*12+2,0,Math.PI*2); 
+        ctx.stroke(); 
+        ctx.restore(); 
+      }
+      // Players
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      let me = state.players.find(p=>p.id===playerId);
+      // Detect local melee edge and record for immediate visuals
+      if (me) {
+        if (input.melee && !prevMelee) {
+          const aimWX_forMelee = camX + (input.aimX / zoom);
+          const aimWY_forMelee = camY + (input.aimY / zoom);
+          const dx = aimWX_forMelee - me.x, dy = aimWY_forMelee - me.y; const d = Math.hypot(dx,dy)||1;
+          localMeleeDirX = dx/d; localMeleeDirY = dy/d; localMeleeAt = performance.now();
+        }
+        prevMelee = input.melee;
+      }
+      for (const p of state.players){
+        ctx.save();
+        if (p.role==='streamer'){
+          ctx.strokeStyle = '#4caf50';
+          ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.stroke();
+          if (p.weaponed){ ctx.strokeStyle='#ffa726'; ctx.globalAlpha=.6; ctx.beginPath(); ctx.arc(p.x,p.y,14,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+        } else {
+          ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
+          ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
+          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.7; ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2); ctx.stroke(); }
+          ctx.globalAlpha = .95; ctx.fillStyle = '#e57373'; ctx.fillText(p.name, p.x, p.y - 16);
+          // Emote above zombie head for 5s
+          if (p.emote && (p.emoteUntil||0) > Date.now()){
+            ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+            ctx.globalAlpha = 1;
+            ctx.fillText(p.emote, p.x, p.y - 32);
+            ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+          }
+        }
+        // Bat swing arc visual (short-lived)
+        const swingAge = (state.t||Date.now()) - (p.meleeAt||0);
+        if (swingAge >= 0 && swingAge < 220) {
+          const alpha = 1 - (swingAge / 220);
+          const ang = Math.atan2(p.meleeDirY||0, p.meleeDirX||1);
+          const span = Math.PI / 1.8; // ~100Â°
+          const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(p.x + Math.cos(ang - span/2)*r0, p.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(p.x, p.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(p.x + Math.cos(ang + span/2)*r0, p.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(p.x, p.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      // Crosshair and aim line for local player (world coordinates)
+      me = state.players.find(p=>p.id===playerId);
+      if (me){
+        const aimWX = camX + (input.aimX / zoom);
+        const aimWY = camY + (input.aimY / zoom);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,.5)';
+        ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(aimWX, aimWY); ctx.stroke();
+        ctx.beginPath(); ctx.arc(aimWX, aimWY, 6, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(aimWX-8,aimWY); ctx.lineTo(aimWX+8,aimWY); ctx.moveTo(aimWX,aimWY-8); ctx.lineTo(aimWX,aimWY+8); ctx.stroke();
+        ctx.restore();
+
+        // Local predicted bat swing arc so streamer sees swing instantly
+        const age = performance.now() - localMeleeAt;
+        if (age >= 0 && age < 220) {
+          const alpha = 1 - (age / 220);
+          const ang = Math.atan2(localMeleeDirY, localMeleeDirX);
+          const span = Math.PI / 1.8; // ~100Â°
+          const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(me.x + Math.cos(ang - span/2)*r0, me.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(me.x, me.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(me.x + Math.cos(ang + span/2)*r0, me.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(me.x, me.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Also render server-synced swing for local player (fallback)
+        const swingAgeSrv = (state.t||Date.now()) - (me.meleeAt||0);
+        if (swingAgeSrv >= 0 && swingAgeSrv < 220) {
+          const alpha = 1 - (swingAgeSrv / 220);
+          const ang = Math.atan2(me.meleeDirY||0, me.meleeDirX||1);
+          const span = Math.PI / 1.8; const r0 = 14, r1 = 34;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha*0.9);
+          ctx.fillStyle = 'rgba(255,213,79,0.35)';
+          ctx.beginPath();
+          ctx.moveTo(me.x + Math.cos(ang - span/2)*r0, me.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(me.x, me.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(me.x + Math.cos(ang + span/2)*r0, me.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(me.x, me.y, r0, ang + span/2, ang - span/2, true);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // End world transform
+      ctx.restore();
+
+      // Screen-space border overlay
+      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,c.width-2,c.height-2);
+    }
+
+    function updatePlayerList(players){
+      playersEl.innerHTML = players.map(p=>`<span class="pill ${p.role}">${p.role==='streamer'?'🟢':'🧟'} ${p.name}${p.role==='streamer'?' · '+p.score:''}</span>`).join(' ');
+    }
+
+    function flash(){
+      flashEl.classList.add('show');
+      setTimeout(()=>flashEl.classList.remove('show'),150);
+    }
+
+    function updateTimer(seconds) {
+      const min = Math.floor(seconds / 60);
+      const sec = seconds % 60;
+      timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    function appendChat(from, message) {
+      chatMessagesEl.innerHTML += `<div>${from}: ${message}</div>`;
+      while (chatMessagesEl.children.length > 10) {
+        chatMessagesEl.removeChild(chatMessagesEl.firstChild);
+      }
+    }
+
+    function sendChat(msg) {
+      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'chat', message: msg }));
+    }
+
+    // Animation loop for effects and smoother visuals
+    let last = performance.now();
+    const fpsSamples = [];
+    const fpsWindow = 120; // ~2s at 60fps
+    let lastNerdUpdate = 0;
+    lastHp = 100;
+    function loop(){
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      draw(dt);
+      // FPS tracking
+      const fps = dt>0 ? 1000/dt : 0;
+      fpsSamples.push(fps);
+      if (fpsSamples.length > fpsWindow) fpsSamples.shift();
+      // State messages per second
+      if (now - lastStateRateAt >= 1000){ statesPerSec = stateMsgCount; stateMsgCount = 0; lastStateRateAt = now; }
+      // Update nerd overlay at ~4Hz
+      if (nerdOn && now - lastNerdUpdate > 250){
+        const avgFps = fpsSamples.length ? (fpsSamples.reduce((a,b)=>a+b,0)/fpsSamples.length) : 0;
+        const minFps = fpsSamples.length ? Math.min(...fpsSamples) : 0;
+        const maxFps = fpsSamples.length ? Math.max(...fpsSamples) : 0;
+        const lat = latency ? latency.getLatencyStats() : { avg:0, min:0, max:0, jitter:0 };
+        const players = state.players?.length||0;
+        const zombies = state.players?.filter(p=>p.role==='zombie').length||0;
+        const bullets = state.bullets?.length||0;
+        const pickups = state.pickups?.length||0;
+        const walls = state.walls?.length||0;
+        const wsBuf = ws && ws.bufferedAmount || 0;
+        nerdPanel.innerHTML = `
+          <div><strong>Nerd Stats</strong></div>
+          <div>FPS: ${avgFps.toFixed(1)} (min ${minFps.toFixed(0)} max ${maxFps.toFixed(0)})</div>
+          <div>Latency: ${lat.avg.toFixed(1)} ms (min ${lat.min.toFixed(0)} max ${lat.max.toFixed(0)}) jitter ${lat.jitter.toFixed(1)} ms</div>
+          <div>States/s: ${statesPerSec.toFixed(0)}</div>
+          <div>Entities: players ${players} (z ${zombies}) bullets ${bullets} pickups ${pickups} walls ${walls}</div>
+          <div>WS buf: ${wsBuf}</div>
+        `;
+        lastNerdUpdate = now;
+      }
+      requestAnimationFrame(loop);
+    }
+    loop();
+
+    // Weapon switching
+    function sendSwitchWeapon(w) {
+      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'switch_weapon', weapon: w }));
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      if (e.key==='1') sendSwitchWeapon('pistol');
+      if (e.key==='2') sendSwitchWeapon('smg');
+      if (e.key==='3') sendSwitchWeapon('shotgun');
+    });
+    document.querySelectorAll('.weapon').forEach(btn => btn.addEventListener('click', (e) => {
+      const w = e.currentTarget && e.currentTarget.getAttribute('data-weapon');
+      if (w) sendSwitchWeapon(w);
+    }));
+
+    // Fullscreen toggle
+    document.getElementById('fullscreen').onclick = async () => {
+      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen().catch(()=>{}); }
+      else { await document.exitFullscreen().catch(()=>{}); }
+    };
+
+    newBtn.onclick = (ev) => { if (ev && ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); if (ws && ws.readyState===1) { leaveRoom(true); } else { boot(); } };
+    copyBtn.onclick = (ev) => { if (ev && ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); if (!copyBtn.disabled && link.value) { navigator.clipboard.writeText(link.value); toast('Join link copied'); copyBtn.textContent = 'Copied!'; setTimeout(()=>copyBtn.textContent='Copy Link',800); } };
+    toggleChatBtn.onclick = (ev) => {
+      if (ev && ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur();
+      if (!ws || ws.readyState !== 1) return;
+      // Flip desired state based on button label
+      const enable = toggleChatBtn.textContent.includes('Enable');
+      ws.send(JSON.stringify({ type:'toggle_chat', disabled: !enable }));
+    };
+
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && chatInput.value.trim()) {
+        sendChat(chatInput.value.trim());
+        chatInput.value = '';
+      }
+    });
+  </script>
+</body>
+</html>
+</file>
+
+<file path="public/styles.css">
+:root {
+  color-scheme: dark;
+  --bg: #0a0b0f;
+  --bg-2: #0b0c10;
+  --panel: #121418;
+  --panel-2: #161920;
+  --border: #252a33;
+  --muted: #98a2b3;
+  --text: #e7eaee;
+
+  /* Accent palette */
+  --green: #4caf50;
+  --red: #ef5350;
+  --blue: #60a5fa;
+  --amber: #ffd54f;
+  --orange: #ffa726;
+  --teal: #2dd4bf;
+  --pink: #f472b6;
+
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(45,212,191,.12), transparent 60%),
+    radial-gradient(1000px 600px at 110% 10%, rgba(244,114,182,.10), transparent 60%),
+    linear-gradient(180deg, var(--bg) 0%, #090a0e 65%, #08090c 100%);
+  color: var(--text);
+  letter-spacing: .2px;
+}
+
+/* ——— Topbar ——— */
+.topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background:
+    linear-gradient(180deg, rgba(12,14,18,.75), rgba(12,14,18,.45) 60%, rgba(12,14,18,0));
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  z-index: 10;
+}
+.brand {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: .3px;
+  background: linear-gradient(90deg, #fff, #9db2ff 40%, #9ef1d1 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: .9;
+}
+.middle-controls { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.right-controls { display: flex; gap: 8px; align-items: center; }
+
+/* ——— App Layout ——— */
+.app {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  padding: 72px 16px 20px;
+  align-items: start;
+}
+.main { min-width: 0; }
+.sidebar { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+@media (max-width: 1100px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { order: -1; }
+}
+
+/* ——— Cards ——— */
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.25);
+}
+.card-title {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* ——— Panels / rows ——— */
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.small { font-size: 12px; opacity: .9; }
+.tip { opacity: .75; }
+
+/* Utility */
+.hidden { display: none !important; }
+
+/* ——— Nerd stats overlay ——— */
+#nerdPanel.nerd-panel {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 1000;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow: 0 8px 18px rgba(0,0,0,.28);
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.right-controls #nerdToggle.active { color: var(--teal); border-color: color-mix(in oklab, var(--teal) 35%, transparent); }
+
+/* ——— Chat + Emotes ——— */
+#chatInput { width: 100%; }
+.chat-messages {
+  width: 100%;
+  max-height: 200px;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.14));
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset;
+}
+#emotes { gap: 4px; }
+#emotes .emote {
+  padding: 4px 8px;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 8px;
+}
+
+/* New emote bar id for redesigned layout */
+#emoteBar { display: flex; flex-wrap: wrap; gap: 6px; }
+#emoteBar .emote {
+  padding: 6px 10px;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 8px;
+}
+
+/* ——— Lists ——— */
+.pill-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ——— Inputs / buttons ——— */
+button, input {
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.08));
+  color: var(--text);
+  outline: none;
+}
+input { background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.12)); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; width: 100%; }
+
+button {
+  cursor: pointer;
+  transition: transform .06s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+  box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 8px 18px rgba(0,0,0,.28);
+}
+button:hover {
+  border-color: rgba(255,255,255,.18);
+  box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 10px 22px rgba(0,0,0,.3), 0 0 0 3px rgba(158, 241, 209, .08);
+}
+button:active { transform: translateY(1px); }
+button[disabled] { opacity: .5; cursor: default; }
+
+/* ——— Badges / pills ——— */
+.badge {
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.14));
+  color: var(--muted);
+}
+#status[data-state="connected"] { color: var(--teal); border-color: color-mix(in oklab, var(--teal) 35%, transparent); }
+#status[data-state="disconnected"] { color: #c3c7d1; opacity: .85; }
+
+.pill {
+  position: relative;
+  padding: 4px 10px 4px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.12));
+}
+.pill::before {
+  content: "";
+  position: absolute;
+  left: 8px; top: 50%; transform: translateY(-50%);
+  width: 8px; height: 8px; border-radius: 999px;
+  background: #888;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.06) inset;
+}
+.pill.streamer { color: var(--green); border-color: color-mix(in oklab, var(--green) 35%, transparent); }
+.pill.streamer::before { background: var(--green); }
+.pill.zombie   { color: var(--red); border-color: color-mix(in oklab, var(--red) 35%, transparent); }
+.pill.zombie::before { background: var(--red); }
+
+/* ——— Canvas / stage ——— */
+.stage { display: grid; place-items: center; padding: 0; }
+canvas.arena {
+  position: relative;
+  outline: 1px solid rgba(255,255,255,.04);
+  border-radius: 18px;
+  background:
+    radial-gradient(transparent 0 7px, rgba(255,255,255,.06) 8px 8px) 0 0 / 32px 32px,
+    linear-gradient(180deg, #1a1f27, #11161c);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.03),
+    0 12px 36px rgba(0,0,0,.55);
+  animation: grid-pan 26s linear infinite;
+}
+canvas.arena:focus { outline: none; }
+canvas.arena::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(80% 60% at 50% 40%, transparent, rgba(0,0,0,.22)),
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,.06), transparent 40%);
+  mix-blend-mode: overlay;
+  opacity: .8;
+}
+@keyframes grid-pan {
+  0%   { background-position: 0 0, 0 0; }
+  100% { background-position: 64px 64px, 0 0; }
+}
+
+body.connected canvas.arena {
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.03),
+    0 12px 36px rgba(0,0,0,.55),
+    0 0 22px rgba(45,212,191,.22);
+}
+
+/* ——— Hit flash / toast ——— */
+.hit-flash { position: fixed; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(circle at center, rgba(239,83,80,.18), transparent 60%);
+  opacity: 0; transition: opacity .22s ease;
+}
+.hit-flash.show { opacity: 1; }
+
+.toast {
+  position: fixed; bottom: 18px; left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.18));
+  color: var(--text);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+</file>
+
+<file path="README.md">
+# Cloudflare Arena Shooter (Streamer vs. Chat Zombies)
+
+Ultra-minimal top-down arena where the **streamer** moves fast and shoots; **chat** joins via a link and plays slow **zombies**. Built on **Cloudflare Workers + Durable Objects** with raw **WebSockets**. Static HTML served by Pages (or any static host).
+
+## Features
+- Rooms keyed by URL (e.g. `/ws/abcd12`) with one DO instance per room.
+- Streamer: WASD + mouse aim + click to shoot.
+- Chat: WASD movement as slow zombies; on touch, streamer loses 1 score.
+- Server-authoritative positions; 20Hz snapshots.
+
+## Run locally
+```bash
+npm create cloudflare@latest . # or `npm i -D wrangler`
+wrangler dev
+```
+Open `http://127.0.0.1:8787/streamer.html` and click **Create Room**. Share the generated `join.html?room=XXXXXX` link.
+
+> If serving static files from another host (e.g. Pages), ensure the Worker is reachable at the same domain (or adjust `public/*.html` to point to your Worker origin).
+
+## Deploy
+1. `wrangler deploy`
+2. Host `/public` with Cloudflare Pages **or** serve them elsewhere.
+3. Point your domain routes to the Worker (`/ws/*`, `/create`).
+
+## Notes
+- This is intentionally minimal: no authentication, no persistence beyond DO lifetime.
+- For cost/scale, consider Durable Object WebSocket hibernation and backoff reconnects.
+- Security: names are sanitized; inputs are rate-limited implicitly by tick; add explicit token bucket if you expect abuse.
+
+## Customize
+- Speeds, radii, arena size in `src/room.ts`.
+- Add scoreboard UI, streamer-only control panel, zombie cosmetics, etc.
+</file>
+
+<file path="src/room.ts">
+// Minimal top-down arena shooter: one Streamer (fast marine) vs many Chat Zombies (slow).
+// Server maintains authoritative positions and scores. 20Hz tick.
+
+declare global {
+  interface WebSocket {
+    accept(): void;
+  }
+  interface ResponseInit {
+    webSocket?: WebSocket;
+  }
+  class WebSocketPair {
+    0: WebSocket;
+    1: WebSocket;
+  }
+  interface DurableObjectState {
+    // Define properties as needed
+  }
+}
+
+export interface Env {
+  TARKOV_NAMES: string;
+}
+
+type Vec = { x: number; y: number };
+
+interface Input {
+  up: boolean;
+  down: boolean;
+  left: boolean;
+  right: boolean;
+  shoot: boolean;
+  aimX: number;
+  aimY: number;
+  melee?: boolean;
+}
+
+interface Player {
+  id: string;
+  role: "streamer" | "zombie";
+  name: string;
+  pos: Vec;
+  vel: Vec;
+  input: Input;
+  ws?: WebSocket;
+  score: number; // streamer uses; zombies optional
+  alive: boolean;
+  lastSeen: number;
+  lastShotAt?: number;
+  lastMeleeAt?: number;
+  hp?: number; // streamer only
+  maxHp?: number; // streamer only
+  boostUntil?: number; // zombies temporary speed boost timestamp
+  ammo?: number; // streamer ammo
+  maxAmmo?: number; // streamer max ammo
+  weaponBoostUntil?: number; // streamer temporary weapon buff
+  emote?: string; // short emoji shown above head
+  emoteUntil?: number; // expiry timestamp (ms)
+  // Streamer weapons
+  weapon?: "pistol" | "smg" | "shotgun" | "bat";
+  pistolAmmo?: number;
+  smgAmmo?: number;
+  shotgunAmmo?: number;
+  meleeDirX?: number;
+  meleeDirY?: number;
+  // Lag compensation
+  lagMs?: number;
+  inputBuffer?: Array<{input: Input, timestamp: number}>;
+  lastInputTime?: number;
+}
+
+interface Bullet {
+  id: string;
+  pos: Vec;
+  vel: Vec;
+  ownerId: string; // streamer only in this minimal build
+  ttl: number; // ms
+}
+
+interface Rect { id: string; x: number; y: number; w: number; h: number }
+type PickupType = "health" | "speed" | "ammo" | "weapon" | "shield" | "magnet" | "freeze" | "blast" | "treasure";
+interface Pickup { id: string; type: PickupType; x: number; y: number }
+
+export class RoomDO {
+  state: DurableObjectState;
+  env: Env;
+
+  // Game space
+  W = 960; // px
+  H = 540; // px
+
+  // Entities
+  players = new Map<string, Player>();
+  bullets: Bullet[] = [];
+  walls: Rect[] = [];
+  pickups: Pickup[] = [];
+
+  // Loop - Different tick rates for different systems
+  tickMs = 50; // 20Hz - main game loop
+  uiTickMs = 200; // 5Hz - UI updates
+  pickupTickMs = 500; // 2Hz - pickup spawning checks
+  running = false;
+  loopTimer: number | undefined;
+  uiTimer: number | undefined;
+  pickupTimer: number | undefined;
+  FIRE_COOLDOWN_MS = 180; // streamer fire cooldown
+  lastPickupSpawn = Date.now();
+  pickupIntervalMs = 12000; // spawn every 12s
+  mapReady = false;
+  roundEndTime: number | undefined;
+  roundDurationMs = 5 * 60 * 1000; // 5 minutes
+    // Global effects
+  zombieSlowUntil: number | undefined;
+  chatEnabled = true;
+
+  // Metadata
+  createdAt = Date.now();
+
+  constructor(state: DurableObjectState, env: Env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(req: Request) {
+    if (req.headers.get("Upgrade") !== "websocket") return new Response("Expected WebSocket", { status: 426 });
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+    server.accept();
+
+    // Assign a temporary id; role determined on join message
+    const pid = crypto.randomUUID().slice(0, 8);
+
+    // Track WS
+    server.addEventListener("message", (ev) => this.onMessage(server, pid, ev));
+    server.addEventListener("close", () => this.onClose(pid));
+
+    // Kick off ping
+    const pingIv = setInterval(() => {
+      try { server.send(JSON.stringify({ type: "ping" })); } catch {}
+    }, 15000);
+    server.addEventListener("close", () => clearInterval(pingIv));
+
+    // Start loop on demand
+    if (!this.running) this.startLoop();
+    if (!this.mapReady) this.generateMap();
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  startLoop() {
+    this.running = true;
+    if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
+    
+    // Main game loop - 20Hz (includes state broadcast for responsiveness)
+    const step = () => {
+      this.update();
+      this.broadcastState();
+      this.loopTimer = setTimeout(step, this.tickMs) as unknown as number;
+    };
+    this.loopTimer = setTimeout(step, this.tickMs) as unknown as number;
+    
+    // Pickup spawning - 2Hz (non-critical)
+    const pickupStep = () => {
+      this.checkPickupSpawning();
+      this.pickupTimer = setTimeout(pickupStep, this.pickupTickMs) as unknown as number;
+    };
+    this.pickupTimer = setTimeout(pickupStep, this.pickupTickMs) as unknown as number;
+  }
+
+  stopLoop() {
+    if (this.loopTimer) clearTimeout(this.loopTimer as unknown as number);
+    if (this.pickupTimer) clearTimeout(this.pickupTimer as unknown as number);
+    this.running = false;
+  }
+
+  // Separate pickup spawning logic for reduced tick rate
+  checkPickupSpawning() {
+    const now = Date.now();
+    if (now - this.lastPickupSpawn > this.pickupIntervalMs) {
+      this.lastPickupSpawn = now;
+      const totalCap = 12;
+      if (this.pickups.length < totalCap) {
+        const caps = { health: 3, speed: 3, ammo: 3, weapon: 2, shield: 2, magnet: 2, freeze: 1, blast: 2, treasure: 3 } as Record<PickupType, number>;
+        const counts = { health:0, speed:0, ammo:0, weapon:0, shield:0, magnet:0, freeze:0, blast:0, treasure:0 } as Record<PickupType, number>;
+        for (const pk of this.pickups) counts[pk.type]++;
+        const types: PickupType[] = ["health","speed","ammo","weapon","shield","magnet","freeze","blast","treasure"]; 
+        // Weighted pick: prefer under-cap types
+        const options: PickupType[] = [];
+        for (const t of types){
+          const room = Math.max(0, caps[t]-counts[t]);
+          for (let i=0;i<room;i++) options.push(t);
+        }
+        if (options.length > 0) {
+          const type = options[Math.floor(Math.random()*options.length)];
+          const pos = this.randomFreePos(28);
+          if (pos && this.okDistanceFromPickups(pos.x, pos.y, 48)) {
+            this.pickups.push({ id: crypto.randomUUID().slice(0,6), type, x: pos.x, y: pos.y });
+          }
+        }
+      }
+    }
+  }
+
+  onMessage(ws: WebSocket, pid: string, ev: MessageEvent) {
+    try {
+      const msg = JSON.parse(String(ev.data));
+      if (!msg || typeof msg !== "object") return;
+      switch (msg.type) {
+        case "join_room": {
+          let role: "streamer" | "zombie" = msg.role === "streamer" ? "streamer" : "zombie";
+          const name = this.sanitizeName(msg.name) || this.randomName();
+
+          // Spawn positions
+          const pos = role === "streamer" ? { x: this.W / 2, y: this.H / 2 } : this.spawnZombiePos();
+
+        const p: Player = {
+          id: pid,
+          role,
+          name,
+          pos,
+          vel: { x: 0, y: 0 },
+          input: { up: false, down: false, left: false, right: false, shoot: false, aimX: 0, aimY: 0, melee: false },
+          ws,
+          score: 0,
+          alive: true,
+          lastSeen: Date.now(),
+          hp: role === "streamer" ? 100 : undefined,
+          maxHp: role === "streamer" ? 100 : undefined,
+          weapon: role === "streamer" ? "pistol" : undefined,
+          pistolAmmo: role === "streamer" ? 60 : undefined,
+          smgAmmo: role === "streamer" ? 120 : undefined,
+          shotgunAmmo: role === "streamer" ? 24 : undefined,
+        };
+        // Enforce single-streamer per room. Downgrade to zombie if already present.
+        if (role === "streamer") {
+          const hasStreamer = [...this.players.values()].some(pl => pl.role === "streamer");
+          if (hasStreamer) {
+            role = "zombie";
+            p.role = "zombie";
+            p.hp = undefined; p.maxHp = undefined; p.ammo = undefined; p.maxAmmo = undefined; p.weaponBoostUntil = undefined;
+            p.weapon = undefined; p.pistolAmmo = undefined; p.smgAmmo = undefined; p.shotgunAmmo = undefined;
+            p.pos = this.spawnZombiePos();
+            try { ws.send(JSON.stringify({ type: "notice", message: "Streamer already active. You joined as a zombie." })); } catch {}
+          }
+        }
+        this.players.set(pid, p);
+
+          ws.send(JSON.stringify({ type: "joined", playerId: pid, name, role, arena: { w: this.W, h: this.H } }));
+          this.broadcast("players_update", { players: [...this.players.values()].map(this.publicPlayer) });
+          break;
+        }
+        case "input": {
+          const p = this.players.get(pid);
+          if (!p) return;
+          const now = Date.now();
+          
+          // Process input with lag compensation
+          this.processInputWithLagCompensation(p, {
+            up: !!msg.up,
+            down: !!msg.down,
+            left: !!msg.left,
+            right: !!msg.right,
+            shoot: !!msg.shoot,
+            aimX: Number(msg.aimX) || 0,
+            aimY: Number(msg.aimY) || 0,
+            melee: !!msg.melee,
+          }, msg.timestamp || now);
+          
+          p.lastSeen = now;
+          break;
+        }
+        case "ping": {
+          const p = this.players.get(pid);
+          if (!p) return;
+          // Echo back ping for RTT measurement
+          try {
+            p.ws?.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+          } catch {}
+          break;
+        }
+        case "toggle_chat": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== "streamer") return;
+          // allow explicit boolean or toggle if omitted
+          const desired = typeof msg.disabled === 'boolean' ? !msg.disabled : !this.chatEnabled;
+          this.chatEnabled = desired;
+          this.broadcast("notice", { message: this.chatEnabled ? "Chat enabled by streamer" : "Chat disabled by streamer" });
+          break;
+        }
+        case "pong": {
+          const p = this.players.get(pid); if (p) p.lastSeen = Date.now();
+          break;
+        }
+        case "chat": {
+          const p = this.players.get(pid);
+          if (!p) return;
+          if (!this.chatEnabled && p.role !== "streamer") return;
+          this.broadcast("chat", { from: p.name, message: msg.message });
+          break;
+        }
+        case "emote": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== "zombie") return;
+          const symbol = typeof msg.symbol === 'string' ? msg.symbol : '';
+          // Allow only a small curated set of emojis
+          const allowed = new Set(["🧟","💀","🔥","😂","❤️","💢"]);
+          if (!allowed.has(symbol)) return;
+          const now = Date.now();
+          p.emote = symbol;
+          p.emoteUntil = now + 5000; // 5 seconds
+          break;
+        }
+        case "switch_weapon": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== "streamer") return;
+          const w = String(msg.weapon || "");
+          if (w === "pistol" || w === "smg" || w === "shotgun" || w === "bat") {
+            p.weapon = w;
+          }
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  onClose(pid: string) {
+    const p = this.players.get(pid);
+    if (!p) return;
+    this.players.delete(pid);
+    this.broadcast("players_update", { players: [...this.players.values()].map(this.publicPlayer) });
+  }
+
+  update() {
+    const now = Date.now();
+
+    // Drop stale sockets (missed heartbeats for 40s)
+    for (const [id, p] of this.players) {
+      if (now - p.lastSeen > 40000) {
+        this.players.delete(id);
+      }
+    }
+
+    // Integrate movement
+    const dt = this.tickMs / 1000;
+    for (const p of this.players.values()) {
+      let baseSpeed = p.role === "streamer" ? 140 : 65; // px/s
+      if (p.role === "zombie" && (this.zombieSlowUntil || 0) > now) baseSpeed *= 0.55; // global slow
+      const boosted = p.role === "zombie" && (p.boostUntil || 0) > now;
+      const speed = boosted ? baseSpeed * 1.75 : baseSpeed;
+      let vx = 0, vy = 0;
+      if (p.input.up) vy -= 1;
+      if (p.input.down) vy += 1;
+      if (p.input.left) vx -= 1;
+      if (p.input.right) vx += 1;
+      const len = Math.hypot(vx, vy) || 1;
+      p.vel.x = (vx / len) * speed;
+      p.vel.y = (vy / len) * speed;
+      p.pos.x = Math.max(0, Math.min(this.W, p.pos.x + p.vel.x * dt));
+      p.pos.y = Math.max(0, Math.min(this.H, p.pos.y + p.vel.y * dt));
+
+      // Resolve collisions with walls (circle vs axis-aligned rectangles)
+      const pr = p.role === "streamer" ? 10 : 12;
+      for (const rct of this.walls) {
+        const nearestX = Math.max(rct.x, Math.min(p.pos.x, rct.x + rct.w));
+        const nearestY = Math.max(rct.y, Math.min(p.pos.y, rct.y + rct.h));
+        let dx = p.pos.x - nearestX; let dy = p.pos.y - nearestY; let dist = Math.hypot(dx, dy);
+        if (dist < pr) {
+          if (dist === 0) {
+            // Center is inside rectangle; push out along smallest penetration axis
+            const left = Math.abs(p.pos.x - rct.x);
+            const right = Math.abs(rct.x + rct.w - p.pos.x);
+            const top = Math.abs(p.pos.y - rct.y);
+            const bottom = Math.abs(rct.y + rct.h - p.pos.y);
+            const m = Math.min(left, right, top, bottom);
+            if (m === left) p.pos.x = rct.x - pr;
+            else if (m === right) p.pos.x = rct.x + rct.w + pr;
+            else if (m === top) p.pos.y = rct.y - pr;
+            else p.pos.y = rct.y + rct.h + pr;
+          } else {
+            const nx = dx / dist, ny = dy / dist;
+            const push = (pr - dist) + 0.5;
+            p.pos.x += nx * push; p.pos.y += ny * push;
+          }
+        }
+      }
+
+      // Shooting / attacking (streamer only)
+      if (p.role === "streamer" && p.input.shoot) {
+        const nowMs = Date.now();
+        const boostedW = (p.weaponBoostUntil || 0) > nowMs;
+        const weapon = p.weapon || "pistol";
+        const dirx = p.input.aimX - p.pos.x;
+        const diry = p.input.aimY - p.pos.y;
+        const d = Math.hypot(dirx, diry) || 1;
+        const nx = dirx / d, ny = diry / d;
+        const since = nowMs - (p.lastShotAt || 0);
+        if (weapon === "pistol") {
+          // Single-click slow shot: fire once per mouse press
+          const cd = boostedW ? 200 : 320;
+          // Latch: only fire once until shoot is released
+          (p as any)._pistolLatched = (p as any)._pistolLatched || false;
+          if (since >= cd && (p.pistolAmmo ?? 0) > 0 && !(p as any)._pistolLatched) {
+            const speedB = boostedW ? 420 : 360;
+            this.bullets.push({ id: crypto.randomUUID().slice(0,6), pos:{x:p.pos.x,y:p.pos.y}, vel:{x:nx*speedB,y:ny*speedB}, ownerId:p.id, ttl: 1200 });
+            p.pistolAmmo = Math.max(0, (p.pistolAmmo ?? 0) - 1);
+            p.lastShotAt = nowMs;
+            (p as any)._pistolLatched = true;
+          }
+        } else if (weapon === "smg") {
+          const cd = boostedW ? 60 : 90;
+          if (since >= cd && (p.smgAmmo ?? 0) > 0) {
+            const speedB = boostedW ? 400 : 340;
+            const spread = (Math.random()-0.5) * 0.12; // radians
+            const cs = Math.cos(spread), sn = Math.sin(spread);
+            const vx = nx * cs - ny * sn; const vy = nx * sn + ny * cs;
+            this.bullets.push({ id: crypto.randomUUID().slice(0,6), pos:{x:p.pos.x,y:p.pos.y}, vel:{x:vx*speedB,y:vy*speedB}, ownerId:p.id, ttl: 900 });
+            p.smgAmmo = Math.max(0, (p.smgAmmo ?? 0) - 1);
+            p.lastShotAt = nowMs;
+          }
+        } else if (weapon === "shotgun") {
+          const cd = boostedW ? 550 : 800; // slower burst
+          if (since >= cd && (p.shotgunAmmo ?? 0) > 0) {
+            const speedB = boostedW ? 360 : 300;
+            const pellets = 6;
+            for (let i=0;i<pellets;i++){
+              const spread = (Math.random()-0.5) * 0.45; // radians
+              const cs = Math.cos(spread), sn = Math.sin(spread);
+              const vx = nx * cs - ny * sn; const vy = nx * sn + ny * cs;
+              this.bullets.push({ id: crypto.randomUUID().slice(0,6), pos:{x:p.pos.x,y:p.pos.y}, vel:{x:vx*speedB,y:vy*speedB}, ownerId:p.id, ttl: 600 });
+            }
+            p.shotgunAmmo = Math.max(0, (p.shotgunAmmo ?? 0) - 1);
+            p.lastShotAt = nowMs;
+          }
+        }
+      }
+      // Always-available bat (melee) on separate input
+      if (p.role === "streamer" && p.input.melee) {
+        const nowMs = Date.now();
+        const since = nowMs - (p.lastMeleeAt || 0);
+        const cd = 500;
+        if (since >= cd) {
+          const dirx = p.input.aimX - p.pos.x;
+          const diry = p.input.aimY - p.pos.y;
+          const d = Math.hypot(dirx, diry) || 1;
+          const nx = dirx / d, ny = diry / d;
+          p.meleeDirX = nx; p.meleeDirY = ny;
+          const reach = 28; // px
+          for (const z of this.players.values()){
+            if (z.role !== "zombie" || !z.alive) continue;
+            const dx = z.pos.x - p.pos.x; const dy = z.pos.y - p.pos.y;
+            const dist = Math.hypot(dx,dy);
+            if (dist > reach) continue;
+            const dot = (dx/dist||0)*nx + (dy/dist||0)*ny;
+            if (dot > Math.cos(Math.PI/1.8)) {
+              z.alive = false;
+              const id = z.id;
+              setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; } }, 800);
+              p.score += 1;
+            }
+          }
+          p.lastMeleeAt = nowMs;
+        }
+      }
+      // Reset pistol latch when trigger released
+      if (p.role === "streamer" && !p.input.shoot) {
+        if ((p as any)._pistolLatched) (p as any)._pistolLatched = false;
+      }
+    }
+
+    // Update bullets
+    const aliveBullets: Bullet[] = [];
+    for (const b of this.bullets) {
+      b.ttl -= this.tickMs;
+      b.pos.x += b.vel.x * dt;
+      b.pos.y += b.vel.y * dt;
+      if (b.ttl <= 0) continue;
+      if (b.pos.x < 0 || b.pos.x > this.W || b.pos.y < 0 || b.pos.y > this.H) continue;
+
+      // Collision with walls: stop bullet if inside rect (with small margin)
+      let blocked = false;
+      for (const rct of this.walls) {
+        const m = 2; // bullet radius margin
+        if (b.pos.x > rct.x - m && b.pos.x < rct.x + rct.w + m && b.pos.y > rct.y - m && b.pos.y < rct.y + rct.h + m) { blocked = true; break; }
+      }
+      if (blocked) continue;
+
+      // Collision with zombies
+      let hit = false;
+      for (const p of this.players.values()) {
+        if (p.role !== "zombie" || !p.alive) continue;
+        const r = 14; // zombie radius
+        if (Math.hypot(p.pos.x - b.pos.x, p.pos.y - b.pos.y) < r) {
+          p.alive = false;
+          // Respawn after short delay
+          const id = p.id;
+          setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; } }, 800);
+          // Reward streamer
+          const s = [...this.players.values()].find(q => q.id === b.ownerId);
+          if (s) s.score += 1;
+          hit = true; break;
+        }
+      }
+      if (!hit) aliveBullets.push(b);
+    }
+    this.bullets = aliveBullets;
+
+    // Zombie damage to streamer
+    const streamer = [...this.players.values()].find(p => p.role === "streamer");
+    if (streamer) {
+      for (const z of this.players.values()) {
+        if (z.role !== "zombie" || !z.alive) continue;
+        const dist = Math.hypot(z.pos.x - streamer.pos.x, z.pos.y - streamer.pos.y);
+        if (dist < 16) {
+          const shielded = ((streamer as any).shieldUntil || 0) > now;
+          if (!shielded) {
+            if ((streamer.hp ?? 100) > 0) {
+              streamer.hp = Math.max(0, (streamer.hp ?? 100) - 10);
+            }
+            if ((streamer.hp ?? 0) <= 0) {
+              // Respawn streamer with penalty
+              streamer.pos = { x: this.W / 2, y: this.H / 2 };
+              streamer.hp = streamer.maxHp ?? 100;
+              streamer.score = Math.max(0, streamer.score - 2);
+            }
+          }// Knockback streamer slightly
+          const dx = streamer.pos.x - z.pos.x; const dy = streamer.pos.y - z.pos.y; const d = Math.hypot(dx, dy) || 1;
+          streamer.pos.x = Math.max(0, Math.min(this.W, streamer.pos.x + (dx / d) * 12));
+          streamer.pos.y = Math.max(0, Math.min(this.H, streamer.pos.y + (dy / d) * 12));
+          // Teleport zombie to edge to avoid instant re-hit
+          z.pos = this.spawnZombiePos();
+        }
+      }
+    }
+
+    // Pickups: spawn periodically up to a soft cap
+    if (now - this.lastPickupSpawn > this.pickupIntervalMs) {
+      this.lastPickupSpawn = now;
+      const totalCap = 12;
+      if (this.pickups.length < totalCap) {
+        const caps = { health: 3, speed: 3, ammo: 3, weapon: 2, shield: 2, magnet: 2, freeze: 1, blast: 2, treasure: 3 } as Record<PickupType, number>;
+        const counts = { health:0, speed:0, ammo:0, weapon:0, shield:0, magnet:0, freeze:0, blast:0, treasure:0 } as Record<PickupType, number>;
+        for (const pk of this.pickups) counts[pk.type]++;
+        const types: PickupType[] = ["health","speed","ammo","weapon","shield","magnet","freeze","blast","treasure"]; 
+        // Weighted pick: prefer under-cap types
+        const options: PickupType[] = [];
+        for (const t of types){
+          const room = Math.max(0, caps[t]-counts[t]);
+          for (let i=0;i<room;i++) options.push(t);
+        }
+        if (options.length === 0) return;
+        const type = options[Math.floor(Math.random()*options.length)];
+        const pos = this.randomFreePos(28);
+        if (pos && this.okDistanceFromPickups(pos.x, pos.y, 48)) {
+          this.pickups.push({ id: crypto.randomUUID().slice(0,6), type, x: pos.x, y: pos.y });
+        }
+      }
+    }
+
+    // Pickup collection
+    const remaining: Pickup[] = [];
+    for (const p of this.pickups) {
+      let taken = false;
+      for (const pl of this.players.values()) {
+        const pr = pl.role === "streamer" ? 10 : 12;
+        const pickupR = (pl.role === "streamer" && (((pl as any).magnetUntil || 0) > now)) ? 26 : 10;
+        if (Math.hypot(pl.pos.x - p.x, pl.pos.y - p.y) < pr + pickupR) { // pickup radius
+          if (p.type === "health" && pl.role === "streamer") {
+            pl.hp = Math.min(pl.maxHp ?? 100, (pl.hp ?? 100) + 20);
+            taken = true; break;
+          }
+          if (p.type === "speed" && pl.role === "zombie") {
+            pl.boostUntil = now + 7000; // longer 7s speed boost
+            taken = true; break;
+          }
+          if (p.type === "ammo" && pl.role === "streamer") {
+            pl.pistolAmmo = Math.min((pl.pistolAmmo ?? 0) + 15, 120);
+            pl.smgAmmo = Math.min((pl.smgAmmo ?? 0) + 30, 240);
+            pl.shotgunAmmo = Math.min((pl.shotgunAmmo ?? 0) + 6, 48);
+            taken = true; break;
+          }
+          if (p.type === "weapon" && pl.role === "streamer") {
+            pl.weaponBoostUntil = now + 8000; // 8s better weapon
+            taken = true; break;
+          }
+          if (p.type === "shield" && pl.role === "streamer") {
+            (pl as any).shieldUntil = now + 6000; // 6s shield
+            taken = true; break;
+          }
+          if (p.type === "magnet" && pl.role === "streamer") {
+            (pl as any).magnetUntil = now + 8000; // 8s big pickup radius
+            taken = true; break;
+          }
+          if (p.type === "freeze" && pl.role === "streamer") {
+            this.zombieSlowUntil = now + 6000; // slow zombies globally for 6s
+            taken = true; break;
+          }
+          if (p.type === "blast" && pl.role === "streamer") {
+            // Clear nearby zombies and score for each
+            const radius = 90;
+            for (const z of this.players.values()){
+              if (z.role !== "zombie" || !z.alive) continue;
+              if (Math.hypot(z.pos.x - pl.pos.x, z.pos.y - pl.pos.y) <= radius){
+                z.alive = false;
+                const id = z.id;
+                setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; } }, 800);
+                if (pl.role === "streamer") pl.score += 1;
+              }
+            }
+            taken = true; break;
+          }
+          if (p.type === "treasure" && pl.role === "streamer") {
+            pl.score += 3;
+            taken = true; break;
+          }
+        }
+      }
+      if (!taken) remaining.push(p);
+    }
+    this.pickups = remaining;
+
+    // Round timer: reset when time elapses
+    if ((this.roundEndTime || 0) > 0 && now >= (this.roundEndTime as number)) {
+      this.roundEndTime = now + this.roundDurationMs;
+      this.bullets = [];
+      this.pickups = [];
+      for (const p of this.players.values()) {
+        if (p.role === "streamer") {
+          p.pos = { x: this.W / 2, y: this.H / 2 };
+          p.score = 0;
+          p.alive = true;
+          p.hp = p.maxHp ?? 100;
+          p.weapon = "pistol";
+          p.pistolAmmo = 60;
+          p.smgAmmo = 120;
+          p.shotgunAmmo = 24;
+        } else {
+          p.pos = this.spawnZombiePos();
+          p.alive = true;
+          p.boostUntil = undefined;
+        }
+      }
+      // Let clients know a new round started
+      this.broadcast("notice", { message: "New round!" });
+    }
+  }
+
+  broadcastState() {
+    const snapshot = {
+      type: "state",
+      t: Date.now(),
+      players: [...this.players.values()].map(this.publicPlayer),
+      bullets: this.bullets.map(b => ({ id: b.id, x: b.pos.x, y: b.pos.y, ownerId: b.ownerId })),
+      walls: this.walls.map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h })),
+      pickups: this.pickups.map(pk => ({ id: pk.id, type: pk.type, x: pk.x, y: pk.y })),
+      arena: { w: this.W, h: this.H },
+      remainingTime: Math.max(0, Math.floor(((this.roundEndTime || Date.now()) - Date.now()) / 1000)),
+      chatEnabled: this.chatEnabled,
+    };
+    const msg = JSON.stringify(snapshot);
+    for (const p of this.players.values()) {
+      if (!p.ws) continue;
+      try { p.ws.send(msg); } catch {}
+    }
+  }
+
+  broadcast(type: string, payload: unknown) {
+    const msg = JSON.stringify({ type, ...payload as any });
+    for (const p of this.players.values()) {
+      if (!p.ws) continue;
+      try { p.ws.send(msg); } catch {}
+    }
+  }
+
+  publicPlayer = (p: Player) => ({
+    id: p.id,
+    name: p.name,
+    role: p.role,
+    x: p.pos.x,
+    y: p.pos.y,
+    alive: p.alive,
+    score: p.score,
+    hp: p.hp ?? 0,
+    boosted: (p.boostUntil || 0) > Date.now(),
+    ammo: p.ammo ?? 0,
+    weaponed: (p.weaponBoostUntil || 0) > Date.now(),
+    emote: p.emote || "",
+    emoteUntil: p.emoteUntil || 0,
+    weapon: p.weapon,
+    pistolAmmo: p.pistolAmmo,
+    smgAmmo: p.smgAmmo,
+    shotgunAmmo: p.shotgunAmmo,
+    meleeAt: p.lastMeleeAt || 0,
+    meleeDirX: p.meleeDirX || 0,
+    meleeDirY: p.meleeDirY || 0,
+    // lightweight booleans for some visual hints (optional for clients)
+    shielded: ((p as any).shieldUntil || 0) > Date.now(),
+    magneted: ((p as any).magnetUntil || 0) > Date.now(),
+  });
+
+  sanitizeName(n: string) {
+    if (!n) return "";
+    const ok = n.replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 20);
+    return ok.trim();
+  }
+
+  randomName() {
+    const list = (this.env.TARKOV_NAMES || "").split(",").map(s => s.trim()).filter(Boolean);
+    return list[Math.floor(Math.random() * list.length)] || "FactoryGhost";
+  }
+
+  spawnZombiePos(): Vec {
+    // Spawn along edges
+    const edge = Math.floor(Math.random() * 4);
+    let pos: Vec = { x: 0, y: 0 };
+    if (edge === 0) pos = { x: Math.random() * this.W, y: 0 };
+    else if (edge === 1) pos = { x: this.W, y: Math.random() * this.H };
+    else if (edge === 2) pos = { x: Math.random() * this.W, y: this.H };
+    else pos = { x: 0, y: Math.random() * this.H };
+    // Nudge inward until free of walls
+    for (let i=0;i<20;i++){
+      if (!this.circleIntersectsAnyWall(pos.x, pos.y, 12)) break;
+      pos.x = Math.min(this.W-12, Math.max(12, pos.x + (pos.x < this.W/2? 5 : -5)));
+      pos.y = Math.min(this.H-12, Math.max(12, pos.y + (pos.y < this.H/2? 5 : -5)));
+    }
+    return pos;
+  }
+
+  // Map generation and helpers
+  generateMap() {
+    // Rectangular rooms and corridors using recursive division
+    this.mapReady = true;
+    const T = 10; // wall thickness
+    // Border walls
+    this.walls.push({ id: crypto.randomUUID().slice(0,6), x: 0, y: 0, w: this.W, h: T });
+    this.walls.push({ id: crypto.randomUUID().slice(0,6), x: 0, y: this.H - T, w: this.W, h: T });
+    this.walls.push({ id: crypto.randomUUID().slice(0,6), x: 0, y: 0, w: T, h: this.H });
+    this.walls.push({ id: crypto.randomUUID().slice(0,6), x: this.W - T, y: 0, w: T, h: this.H });
+
+    const minW = 140, minH = 110, door = 40;
+    const rnd = (a:number,b:number)=>Math.floor(a + Math.random()*(b-a+1));
+
+    const divide = (x:number,y:number,w:number,h:number,depth:number)=>{
+      if (w < minW*2 || h < minH*2 || depth>4) return;
+      const horizontal = w < h ? true : w > h ? false : Math.random() < 0.5;
+      if (horizontal){
+        const wy = rnd(y+minH, y+h-minH);
+        // Create wall across with a doorway gap
+        const gapX = rnd(x+T+door, x+w-T-door);
+        // left segment
+        this.walls.push({ id: crypto.randomUUID().slice(0,6), x, y: wy - T/2, w: gapX - x - door/2, h: T });
+        // right segment
+        const rightX = gapX + door/2;
+        this.walls.push({ id: crypto.randomUUID().slice(0,6), x: rightX, y: wy - T/2, w: x+w - rightX, h: T });
+        divide(x,y,w,wy-y,depth+1);
+        divide(x,wy,w,y+h-wy,depth+1);
+      } else {
+        const wx = rnd(x+minW, x+w-minW);
+        const gapY = rnd(y+T+door, y+h-T-door);
+        // top segment
+        this.walls.push({ id: crypto.randomUUID().slice(0,6), x: wx - T/2, y, w: T, h: gapY - y - door/2 });
+        // bottom segment
+        const bottomY = gapY + door/2;
+        this.walls.push({ id: crypto.randomUUID().slice(0,6), x: wx - T/2, y: bottomY, w: T, h: y+h - bottomY });
+        divide(x,y,wx-x,h,depth+1);
+        divide(wx,y,x+w-wx,h,depth+1);
+      }
+    };
+    divide(T,T,this.W-2*T,this.H-2*T,0);
+  }
+
+  randomFreePos(buffer = 24): Vec | null {
+    for (let tries = 0; tries < 40; tries++) {
+      const x = buffer + Math.random() * (this.W - buffer * 2);
+      const y = buffer + Math.random() * (this.H - buffer * 2);
+      // Not too close to center spawn
+      if (Math.hypot(x - this.W/2, y - this.H/2) < 60) continue;
+      let ok = true;
+      for (const rct of this.walls) {
+        const margin = 18;
+        if (x > rct.x - margin && x < rct.x + rct.w + margin && y > rct.y - margin && y < rct.y + rct.h + margin) { ok = false; break; }
+      }
+      if (!ok) continue;
+      return { x, y };
+    }
+    return null;
+  }
+
+  // Lag compensation method
+  processInputWithLagCompensation(player: Player, input: Input, timestamp: number) {
+    const now = Date.now();
+    
+    // Calculate lag
+    if (player.lastInputTime) {
+      const timeDiff = now - player.lastInputTime;
+      player.lagMs = Math.max(0, Math.min(500, timeDiff)); // Cap at 500ms
+    }
+    
+    // Store input in buffer for potential rollback
+    if (!player.inputBuffer) player.inputBuffer = [];
+    player.inputBuffer.push({ input: { ...input }, timestamp });
+    
+    // Keep only recent inputs (1 second)
+    const cutoff = now - 1000;
+    player.inputBuffer = player.inputBuffer.filter(i => i.timestamp > cutoff);
+    
+    // Apply input immediately (server authoritative)
+    player.input = input;
+    player.lastInputTime = now;
+  }
+
+  circleIntersectsAnyWall(x:number,y:number,r:number){
+    for (const w of this.walls){
+      const nx = Math.max(w.x, Math.min(x, w.x+w.w));
+      const ny = Math.max(w.y, Math.min(y, w.y+w.h));
+      if (Math.hypot(x-nx,y-ny) < r) return true;
+    }
+    return false;
+  }
+
+  okDistanceFromPickups(x:number,y:number,minD:number){
+    for (const p of this.pickups){ if (Math.hypot(x-p.x,y-p.y) < minD) return false; }
+    return true;
+  }
+}
+</file>
+
+<file path="src/worker.ts">
+import { RoomDO } from "./room";
+
+export interface Env {
+  ROOMS: DurableObjectNamespace;
+  TARKOV_NAMES: string;
+}
+
+declare global {
+  interface DurableObjectNamespace {
+    idFromName(name: string): DurableObjectId;
+    get(id: DurableObjectId): DurableObjectStub;
+  }
+  
+  interface DurableObjectId {}
+  
+  interface DurableObjectStub {
+    fetch(request: Request): Promise<Response>;
+  }
+}
+
+export default {
+  async fetch(req: Request, env: Env) {
+    const url = new URL(req.url);
+
+    // WebSocket upgrade routed to the Room Durable Object
+    if (url.pathname.startsWith("/ws/") && req.headers.get("Upgrade") === "websocket") {
+      const roomId = url.pathname.split("/").pop()!;
+      const id = env.ROOMS.idFromName(roomId);
+      const stub = env.ROOMS.get(id);
+      return stub.fetch(req);
+    }
+
+    // Mint a new room id with regional hint
+    if (url.pathname === "/create" && req.method === "POST") {
+      const region = getRegionFromRequest(req);
+      const roomId = `${region}-${crypto.randomUUID().slice(0, 6)}`;
+      return new Response(JSON.stringify({ roomId }), { headers: { "content-type": "application/json" } });
+    }
+
+    // Simple health
+    if (url.pathname === "/health") return new Response("ok");
+
+    return new Response("Not found", { status: 404 });
+  },
+};
+
+// Required for binding discovery in some setups
+// Get region hint from CF headers or fallback
+function getRegionFromRequest(req: Request): string {
+  // Cloudflare provides colo (data center) in CF-Ray header
+  const cfRay = req.headers.get('CF-Ray');
+  if (cfRay) {
+    const colo = cfRay.split('-')[1];
+    if (colo) {
+      // Map some common colos to regions
+      const regionMap: Record<string, string> = {
+        'LAX': 'us-west', 'SFO': 'us-west', 'SEA': 'us-west',
+        'DFW': 'us-central', 'ORD': 'us-central', 'ATL': 'us-central',
+        'IAD': 'us-east', 'EWR': 'us-east', 'MIA': 'us-east',
+        'LHR': 'eu-west', 'CDG': 'eu-west', 'AMS': 'eu-west',
+        'FRA': 'eu-central', 'WAW': 'eu-central',
+        'NRT': 'asia-east', 'ICN': 'asia-east', 'HKG': 'asia-east',
+        'SIN': 'asia-south', 'BOM': 'asia-south'
+      };
+      return regionMap[colo] || 'global';
+    }
+  }
+  
+  // Fallback to CF-IPCountry header
+  const country = req.headers.get('CF-IPCountry');
+  if (country) {
+    const countryToRegion: Record<string, string> = {
+      'US': 'us-central', 'CA': 'us-central',
+      'GB': 'eu-west', 'DE': 'eu-central', 'FR': 'eu-west', 'NL': 'eu-west',
+      'JP': 'asia-east', 'KR': 'asia-east', 'CN': 'asia-east',
+      'SG': 'asia-south', 'IN': 'asia-south', 'AU': 'asia-south'
+    };
+    return countryToRegion[country] || 'global';
+  }
+  
+  return 'global';
+}
+
+export { RoomDO };
+</file>
+
+<file path="wrangler.toml">
+name = "arena-shooter"
+main = "src/worker.ts"
+compatibility_date = "2024-10-22"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+[vars]
+TARKOV_NAMES = "KibaRogue,WoodsScav,ShorelineRat,FactoryGhost,LabsRunner,InterchangeChad,DormsGoblin,ReserveMole,FleaFlipper,TetrizHoarder,LedXHunter,SlickSeeker,RSASSEnjoyer,M995Enjoyer,GrenadierGoon,SanitarStan,KillaChaser,TagillaTapper,GluharGuy,ShturmanScout,KnightWatcher,RogueRaider,USECFriend,BEARBuddy,JaegerPal,FenceFella,TherapistAlly,RagmanRigger,SkierSlinger,PraporPatron,MechanicMain,PeacekeeperPro,LabsRat,MarkedRoomMole,StashGremlin,MoonshineMax,ScavJunkie,OmComEnjoyer,SJ6Sprinter,AltynAddict,ThermalAndy,GreenBatteryGuy,DormsKeyKing,GPUGoblin,AmmoArbiter,WaffleFilter"
+
+[assets]
+directory = "public"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+</file>
+
+</files>

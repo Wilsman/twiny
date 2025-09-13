@@ -101,6 +101,24 @@ body {
 /* Utility */
 .hidden { display: none !important; }
 
+/* ——— Nerd stats overlay ——— */
+#nerdPanel.nerd-panel {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 1000;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow: 0 8px 18px rgba(0,0,0,.28);
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.right-controls #nerdToggle.active { color: var(--teal); border-color: color-mix(in oklab, var(--teal) 35%, transparent); }
+
 /* ——— Chat + Emotes ——— */
 #chatInput { width: 100%; }
 .chat-messages {

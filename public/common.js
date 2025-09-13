@@ -76,6 +76,126 @@ export function suppressPageHotkeys() {
   }, { capture: true });
 }
 
+// Client-side prediction for movement
+export function createPredictionSystem() {
+  let predictedPos = { x: 0, y: 0 };
+  let lastServerPos = { x: 0, y: 0 };
+  let lastServerTime = 0;
+  let inputHistory = [];
+  
+  return {
+    // Predict movement locally
+    predictMovement(input, dt) {
+      const speed = 200; // pixels per second
+      const dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+      const dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+      
+      // Normalize diagonal movement
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) {
+        predictedPos.x += (dx / len) * speed * dt;
+        predictedPos.y += (dy / len) * speed * dt;
+      }
+      
+      // Store input for reconciliation
+      inputHistory.push({
+        input: { ...input },
+        timestamp: performance.now(),
+        predictedPos: { ...predictedPos }
+      });
+      
+      // Keep only recent history (1 second)
+      const cutoff = performance.now() - 1000;
+      inputHistory = inputHistory.filter(h => h.timestamp > cutoff);
+      
+      return { ...predictedPos };
+    },
+    
+    // Reconcile with server state
+    reconcile(serverPos, serverTime) {
+      lastServerPos = { ...serverPos };
+      lastServerTime = serverTime;
+      
+      // Find inputs that happened after server state
+      const replayInputs = inputHistory.filter(h => h.timestamp > serverTime);
+      
+      // Reset to server position and replay inputs
+      predictedPos = { ...serverPos };
+      for (const h of replayInputs) {
+        const dt = 0.05; // Assume 50ms intervals
+        const speed = 200;
+        const dx = (h.input.right ? 1 : 0) - (h.input.left ? 1 : 0);
+        const dy = (h.input.down ? 1 : 0) - (h.input.up ? 1 : 0);
+        
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) {
+          predictedPos.x += (dx / len) * speed * dt;
+          predictedPos.y += (dy / len) * speed * dt;
+        }
+      }
+      
+      return { ...predictedPos };
+    },
+    
+    getCurrentPos() {
+      return { ...predictedPos };
+    },
+    
+    setPos(pos) {
+      predictedPos = { ...pos };
+    }
+  };
+}
+
+// Connection quality monitoring
+export function createLatencyMonitor(ws) {
+  let pingHistory = [];
+  let lastPingTime = 0;
+  
+  return {
+    sendPing() {
+      const now = performance.now();
+      lastPingTime = now;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping', timestamp: now }));
+      }
+    },
+    
+    handlePong(serverTimestamp) {
+      const now = performance.now();
+      const rtt = now - serverTimestamp;
+      pingHistory.push({ rtt, timestamp: now });
+      
+      // Keep only recent pings (30 seconds)
+      const cutoff = now - 30000;
+      pingHistory = pingHistory.filter(p => p.timestamp > cutoff);
+      
+      return rtt;
+    },
+    
+    getAverageLatency() {
+      if (pingHistory.length === 0) return 0;
+      const sum = pingHistory.reduce((acc, p) => acc + p.rtt, 0);
+      return sum / pingHistory.length;
+    },
+    
+    getLatencyStats() {
+      if (pingHistory.length === 0) return { avg: 0, min: 0, max: 0, jitter: 0 };
+      
+      const rtts = pingHistory.map(p => p.rtt);
+      const avg = rtts.reduce((a, b) => a + b) / rtts.length;
+      const min = Math.min(...rtts);
+      const max = Math.max(...rtts);
+      
+      // Calculate jitter (standard deviation)
+      const variance = rtts.reduce((acc, rtt) => acc + Math.pow(rtt - avg, 2), 0) / rtts.length;
+      const jitter = Math.sqrt(variance);
+      
+      return { avg, min, max, jitter };
+    }
+  };
+}
+
 // Minimal toast helper
 export function toast(msg, ms=1200) {
   let t = document.querySelector('.toast');

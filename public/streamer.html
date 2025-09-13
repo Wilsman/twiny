@@ -14,6 +14,7 @@
     </div>
     <div class="right-controls">
       <button id="fullscreen">Fullscreen</button>
+      <button id="nerdToggle">Nerd Stats</button>
     </div>
   </div>
 
@@ -70,7 +71,7 @@
   <div class="hit-flash" id="flash"></div>
 
   <script type="module">
-    import { connect, nameStorage, minimalCanvas, inputController, suppressPageHotkeys, toast } from '/common.js';
+    import { connect, nameStorage, minimalCanvas, inputController, suppressPageHotkeys, toast, createLatencyMonitor } from '/common.js';
 
     const create = async () => {
       const res = await fetch('/create', { method:'POST' });
@@ -107,12 +108,34 @@
     const chatMessagesEl = document.getElementById('chatMessages');
     const chatInput = document.getElementById('chatInput');
     const toggleChatBtn = document.getElementById('toggleChat');
+    const nerdToggleBtn = document.getElementById('nerdToggle');
+    // Nerd panel overlay element
+    const nerdPanel = document.createElement('div');
+    nerdPanel.id = 'nerdPanel';
+    nerdPanel.className = 'nerd-panel hidden mono';
+    document.body.appendChild(nerdPanel);
+
+    let nerdOn = localStorage.getItem('nerdStats') === '1';
+    function setNerd(on){
+      nerdOn = !!on;
+      localStorage.setItem('nerdStats', nerdOn ? '1' : '0');
+      nerdPanel.classList.toggle('hidden', !nerdOn);
+      nerdToggleBtn.classList.toggle('active', nerdOn);
+    }
+    setNerd(nerdOn);
+    nerdToggleBtn.onclick = () => setNerd(!nerdOn);
     copyBtn.disabled = true;
+    // Camera: smooth, mouse-biased, no manual control
+    let camX = 0, camY = 0; // top-left of viewport in world space
+    const zoom = 2; // >1 zooms in for tighter FOV
+    const mouseBias = 110; // world px to bias toward aim  
+    const camLerpBase = 0.05; // smoothing factor per frame higher = faster
 
     let inputIv = null;
     let sendNeutralHandler = null;
     let visHandler = null;
 
+    let pingIv = null; let latency = null; let stateMsgCount = 0; let statesPerSec = 0; let lastStateRateAt = performance.now();
     async function boot() {
       if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
       roomId = await create();
@@ -131,10 +154,15 @@
         newBtn.textContent = 'End Session';
         toggleChatBtn.disabled = false;
       });
+      latency = createLatencyMonitor(ws);
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
+      pingIv = setInterval(() => { try { latency.sendPing(); } catch {} }, 1000);
+
       ws.addEventListener('message', (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'joined') { playerId = msg.playerId; arena = msg.arena; }
         if (msg.type === 'state') {
+          stateMsgCount++;
           // detect removed bullets for small impact effect
           const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
           for (const [id,pos] of prevBulletPos){
@@ -176,6 +204,9 @@
           lastHp = me?(me.hp ?? lastHp):lastHp;
           lastStateTime = performance.now();
         }
+        if (msg.type === 'pong') {
+          if (latency) latency.handlePong(Number(msg.timestamp)||0);
+        }
         if (msg.type === 'chat') {
           appendChat(msg.from, msg.message);
         }
@@ -186,12 +217,21 @@
       });
       inputIv = setInterval(() => {
         if (ws && ws.readyState===1) {
-          ws.send(JSON.stringify({ type:'input', ...input }));
+          // Convert screen aim to world coordinates via camera + zoom
+          const aimWX = camX + (input.aimX / zoom);
+          const aimWY = camY + (input.aimY / zoom);
+          ws.send(JSON.stringify({ type:'input', up:input.up, down:input.down, left:input.left, right:input.right, shoot:input.shoot, melee:input.melee, aimX:aimWX, aimY:aimWY }));
         }
       }, 50);
 
       // If focus is lost, immediately send a neutral input (interval covers it, but faster feedback helps)
-      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false,down:false,left:false,right:false,shoot:false,aimX:input.aimX,aimY:input.aimY })); };
+      sendNeutralHandler = () => {
+        if (ws && ws.readyState===1) {
+          const aimWX = camX + (input.aimX / zoom);
+          const aimWY = camY + (input.aimY / zoom);
+          ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, aimX:aimWX, aimY:aimWY }));
+        }
+      };
       visHandler = () => { if (document.hidden) sendNeutralHandler(); };
       window.addEventListener('blur', sendNeutralHandler);
       document.addEventListener('visibilitychange', visHandler);
@@ -202,6 +242,7 @@
 
     function leaveRoom(manual=true){
       if (inputIv) { clearInterval(inputIv); inputIv = null; }
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
       if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler = null; }
       if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler = null; }
       if (ws) { try { if (manual && ws.readyState===1) ws.close(1000,'leave'); } catch {} ws = null; }
@@ -221,8 +262,24 @@
       // Fill background with solid dark color
       ctx.fillStyle = '#000000';
       ctx.fillRect(0,0, c.width, c.height);
-      // Arena border
-      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,c.width-2,c.height-2);
+      // Update camera target (follow player with slight mouse bias)
+      const meCam = state.players.find(p=>p.id===playerId);
+      if (meCam) {
+        const aimWX = camX + (input.aimX / zoom);
+        const aimWY = camY + (input.aimY / zoom);
+        const dx = aimWX - meCam.x, dy = aimWY - meCam.y; const d = Math.hypot(dx,dy) || 1;
+        const offX = (dx/d) * mouseBias, offY = (dy/d) * mouseBias;
+        const viewW = c.width / zoom, viewH = c.height / zoom;
+        const targetX = Math.min(Math.max(0, (meCam.x + offX) - viewW/2), Math.max(0, arena.w - viewW));
+        const targetY = Math.min(Math.max(0, (meCam.y + offY) - viewH/2), Math.max(0, arena.h - viewH));
+        const k = Math.min(1, (dt/16) * camLerpBase);
+        camX = camX + (targetX - camX) * k;
+        camY = camY + (targetY - camY) * k;
+      }
+      // Begin world transform
+      ctx.save();
+      ctx.scale(zoom, zoom);
+      ctx.translate(-camX, -camY);
       // Walls/rooms
       if (state.walls){
         ctx.fillStyle = '#FFFFFF';
@@ -317,7 +374,9 @@
       // Detect local melee edge and record for immediate visuals
       if (me) {
         if (input.melee && !prevMelee) {
-          const dx = input.aimX - me.x, dy = input.aimY - me.y; const d = Math.hypot(dx,dy)||1;
+          const aimWX_forMelee = camX + (input.aimX / zoom);
+          const aimWY_forMelee = camY + (input.aimY / zoom);
+          const dx = aimWX_forMelee - me.x, dy = aimWY_forMelee - me.y; const d = Math.hypot(dx,dy)||1;
           localMeleeDirX = dx/d; localMeleeDirY = dy/d; localMeleeAt = performance.now();
         }
         prevMelee = input.melee;
@@ -364,15 +423,16 @@
         ctx.restore();
       }
 
-      // Crosshair and aim line for local player
+      // Crosshair and aim line for local player (world coordinates)
       me = state.players.find(p=>p.id===playerId);
       if (me){
+        const aimWX = camX + (input.aimX / zoom);
+        const aimWY = camY + (input.aimY / zoom);
         ctx.save();
         ctx.strokeStyle = 'rgba(255,255,255,.5)';
-        ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(input.aimX, input.aimY); ctx.stroke();
-        ctx.translate(input.aimX, input.aimY);
-        ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(8,0); ctx.moveTo(0,-8); ctx.lineTo(0,8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(aimWX, aimWY); ctx.stroke();
+        ctx.beginPath(); ctx.arc(aimWX, aimWY, 6, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(aimWX-8,aimWY); ctx.lineTo(aimWX+8,aimWY); ctx.moveTo(aimWX,aimWY-8); ctx.lineTo(aimWX,aimWY+8); ctx.stroke();
         ctx.restore();
 
         // Local predicted bat swing arc so streamer sees swing instantly
@@ -414,6 +474,12 @@
           ctx.restore();
         }
       }
+
+      // End world transform
+      ctx.restore();
+
+      // Screen-space border overlay
+      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,c.width-2,c.height-2);
     }
 
     function updatePlayerList(players){
@@ -444,12 +510,43 @@
 
     // Animation loop for effects and smoother visuals
     let last = performance.now();
+    const fpsSamples = [];
+    const fpsWindow = 120; // ~2s at 60fps
+    let lastNerdUpdate = 0;
     lastHp = 100;
     function loop(){
       const now = performance.now();
       const dt = now - last;
       last = now;
       draw(dt);
+      // FPS tracking
+      const fps = dt>0 ? 1000/dt : 0;
+      fpsSamples.push(fps);
+      if (fpsSamples.length > fpsWindow) fpsSamples.shift();
+      // State messages per second
+      if (now - lastStateRateAt >= 1000){ statesPerSec = stateMsgCount; stateMsgCount = 0; lastStateRateAt = now; }
+      // Update nerd overlay at ~4Hz
+      if (nerdOn && now - lastNerdUpdate > 250){
+        const avgFps = fpsSamples.length ? (fpsSamples.reduce((a,b)=>a+b,0)/fpsSamples.length) : 0;
+        const minFps = fpsSamples.length ? Math.min(...fpsSamples) : 0;
+        const maxFps = fpsSamples.length ? Math.max(...fpsSamples) : 0;
+        const lat = latency ? latency.getLatencyStats() : { avg:0, min:0, max:0, jitter:0 };
+        const players = state.players?.length||0;
+        const zombies = state.players?.filter(p=>p.role==='zombie').length||0;
+        const bullets = state.bullets?.length||0;
+        const pickups = state.pickups?.length||0;
+        const walls = state.walls?.length||0;
+        const wsBuf = ws && ws.bufferedAmount || 0;
+        nerdPanel.innerHTML = `
+          <div><strong>Nerd Stats</strong></div>
+          <div>FPS: ${avgFps.toFixed(1)} (min ${minFps.toFixed(0)} max ${maxFps.toFixed(0)})</div>
+          <div>Latency: ${lat.avg.toFixed(1)} ms (min ${lat.min.toFixed(0)} max ${lat.max.toFixed(0)}) jitter ${lat.jitter.toFixed(1)} ms</div>
+          <div>States/s: ${statesPerSec.toFixed(0)}</div>
+          <div>Entities: players ${players} (z ${zombies}) bullets ${bullets} pickups ${pickups} walls ${walls}</div>
+          <div>WS buf: ${wsBuf}</div>
+        `;
+        lastNerdUpdate = now;
+      }
       requestAnimationFrame(loop);
     }
     loop();

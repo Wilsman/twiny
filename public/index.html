@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Streamer vs. Chat Zombies</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Arena Shooter</div>
+    <div class="middle-controls"></div>
+    <div class="right-controls"></div>
+  </div>
+
+  <div class="app" style="grid-template-columns: 1fr;">
+    <main class="main">
+      <div class="stage" style="min-height: 60vh;">
+        <div class="card" style="max-width: 680px; width: 100%;">
+          <div class="card-title">Streamer vs. Chat Zombies</div>
+          <div style="padding: 8px 4px;">
+            <h1 style="margin: 8px 0 16px; font-size: 28px;">Pick your role</h1>
+            <div class="row" style="margin-bottom: 14px;">
+              <a href="/streamer.html"><button style="font-size: 16px;">I am the Streamer</button></a>
+              <span class="tip">Create a room and share the link.</span>
+            </div>
+            <div class="row" style="align-items: stretch;">
+              <input id="joinInput" class="mono" placeholder="Paste room link or code (e.g. us-west-abc123)" />
+              <button id="joinBtn" style="font-size: 16px;">Join as Zombie</button>
+            </div>
+            <div class="tip" style="margin-top: 8px;">You can paste either a full join URL or just the room code.</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width: 680px; width: 100%; margin-top: 16px;">
+          <div class="card-title">Tutorial</div>
+          <div class="row small" style="align-items: flex-start;">
+            <div style="flex:1; min-width: 260px;">
+              <div style="margin-bottom: 8px;"><span class="pill streamer">🟢 Streamer</span></div>
+              <ul class="tip" style="margin: 0 0 0 18px;">
+                <li>WASD to move; mouse to aim.</li>
+                <li>Left click to shoot; right click or Q to swing bat.</li>
+                <li>Press 1/2/3 to switch Pistol/SMG/Shotgun.</li>
+                <li>Click “Create Room” and share the join link.</li>
+                <li>Use “Disable Chat” if things get spicy.</li>
+                <li>Toggle “Nerd Stats” for FPS/latency overlay.</li>
+                <li>Fullscreen recommended for best experience.</li>
+              </ul>
+            </div>
+            <div style="flex:1; min-width: 260px;">
+              <div style="margin-bottom: 8px;"><span class="pill zombie">🧟 Zombies</span></div>
+              <ul class="tip" style="margin: 0 0 0 18px;">
+                <li>WASD to shamble; no mouse needed.</li>
+                <li>Touch the streamer to drain their score.</li>
+                <li>Use the emote bar to cheer/taunt (🧟 💀 🔥 😂 ❤️ 💢).</li>
+                <li>Chat may be disabled by the streamer.</li>
+                <li>Stay persistent and overwhelm in numbers!</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    const input = document.getElementById('joinInput');
+    const joinBtn = document.getElementById('joinBtn');
+
+    function parseRoom(value) {
+      if (!value) return '';
+      value = value.trim();
+      try {
+        const u = new URL(value);
+        const fromQuery = u.searchParams.get('room');
+        if (fromQuery) return fromQuery;
+        // allow last path segment that looks like code
+        const seg = u.pathname.split('/').filter(Boolean).pop() || '';
+        if (/^[a-z0-9\-]{4,}$/.test(seg)) return seg;
+      } catch {}
+      // If not a URL, accept raw code
+      if (/^[a-z0-9\-]{4,}$/.test(value)) return value;
+      return '';
+    }
+
+    function goJoin() {
+      const code = parseRoom(input.value);
+      if (!code) { alert('Please paste a valid join link or room code.'); return; }
+      location.href = `/join.html?room=${encodeURIComponent(code)}`;
+    }
+
+    joinBtn.addEventListener('click', goJoin);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') goJoin(); });
+  </script>
+</body>
+</html>

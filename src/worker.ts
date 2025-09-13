@@ -5,6 +5,19 @@ export interface Env {
   TARKOV_NAMES: string;
 }
 
+declare global {
+  interface DurableObjectNamespace {
+    idFromName(name: string): DurableObjectId;
+    get(id: DurableObjectId): DurableObjectStub;
+  }
+  
+  interface DurableObjectId {}
+  
+  interface DurableObjectStub {
+    fetch(request: Request): Promise<Response>;
+  }
+}
+
 export default {
   async fetch(req: Request, env: Env) {
     const url = new URL(req.url);
@@ -17,9 +30,10 @@ export default {
       return stub.fetch(req);
     }
 
-    // Mint a new room id
+    // Mint a new room id with regional hint
     if (url.pathname === "/create" && req.method === "POST") {
-      const roomId = crypto.randomUUID().slice(0, 6);
+      const region = getRegionFromRequest(req);
+      const roomId = `${region}-${crypto.randomUUID().slice(0, 6)}`;
       return new Response(JSON.stringify({ roomId }), { headers: { "content-type": "application/json" } });
     }
 
@@ -31,4 +45,40 @@ export default {
 };
 
 // Required for binding discovery in some setups
+// Get region hint from CF headers or fallback
+function getRegionFromRequest(req: Request): string {
+  // Cloudflare provides colo (data center) in CF-Ray header
+  const cfRay = req.headers.get('CF-Ray');
+  if (cfRay) {
+    const colo = cfRay.split('-')[1];
+    if (colo) {
+      // Map some common colos to regions
+      const regionMap: Record<string, string> = {
+        'LAX': 'us-west', 'SFO': 'us-west', 'SEA': 'us-west',
+        'DFW': 'us-central', 'ORD': 'us-central', 'ATL': 'us-central',
+        'IAD': 'us-east', 'EWR': 'us-east', 'MIA': 'us-east',
+        'LHR': 'eu-west', 'CDG': 'eu-west', 'AMS': 'eu-west',
+        'FRA': 'eu-central', 'WAW': 'eu-central',
+        'NRT': 'asia-east', 'ICN': 'asia-east', 'HKG': 'asia-east',
+        'SIN': 'asia-south', 'BOM': 'asia-south'
+      };
+      return regionMap[colo] || 'global';
+    }
+  }
+  
+  // Fallback to CF-IPCountry header
+  const country = req.headers.get('CF-IPCountry');
+  if (country) {
+    const countryToRegion: Record<string, string> = {
+      'US': 'us-central', 'CA': 'us-central',
+      'GB': 'eu-west', 'DE': 'eu-central', 'FR': 'eu-west', 'NL': 'eu-west',
+      'JP': 'asia-east', 'KR': 'asia-east', 'CN': 'asia-east',
+      'SG': 'asia-south', 'IN': 'asia-south', 'AU': 'asia-south'
+    };
+    return countryToRegion[country] || 'global';
+  }
+  
+  return 'global';
+}
+
 export { RoomDO };

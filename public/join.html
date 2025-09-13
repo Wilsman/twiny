@@ -14,6 +14,7 @@
     </div>
     <div class="right-controls">
       <button id="fullscreen">Fullscreen</button>
+      <button id="nerdToggle">Nerd Stats</button>
     </div>
   </div>
 
@@ -62,7 +63,7 @@
   </div>
 
   <script type="module">
-    import { connect, nameStorage, minimalCanvas, suppressPageHotkeys, inputController } from '/common.js';
+    import { connect, nameStorage, minimalCanvas, suppressPageHotkeys, inputController, createLatencyMonitor } from '/common.js';
 
     const params = new URLSearchParams(location.search);
     const roomId = params.get('room');
@@ -84,6 +85,22 @@
     const emoteBar = document.getElementById('emoteBar');
     const chatInput = document.getElementById('chatInput');
     const chatMessagesEl = document.getElementById('chatMessages');
+    const nerdToggleBtn = document.getElementById('nerdToggle');
+    // Nerd panel overlay element
+    const nerdPanel = document.createElement('div');
+    nerdPanel.id = 'nerdPanel';
+    nerdPanel.className = 'nerd-panel hidden mono';
+    document.body.appendChild(nerdPanel);
+
+    let nerdOn = localStorage.getItem('nerdStats') === '1';
+    function setNerd(on){
+      nerdOn = !!on;
+      localStorage.setItem('nerdStats', nerdOn ? '1' : '0');
+      nerdPanel.classList.toggle('hidden', !nerdOn);
+      nerdToggleBtn.classList.toggle('active', nerdOn);
+    }
+    setNerd(nerdOn);
+    nerdToggleBtn.onclick = () => setNerd(!nerdOn);
 
     // preload name
     nameEl.value = nameStorage().get() || '';
@@ -115,6 +132,7 @@
     }
 
     let sendNeutralHandler = null; let visHandler = null; let inputIv = null;
+    let pingIv = null; let latency = null; let stateMsgCount = 0; let statesPerSec = 0; let lastStateRateAt = performance.now();
     function leave(){
       if (ws) { try { if (ws.readyState===1) ws.close(1000,'leave'); } catch{} ws=null; }
       status.textContent = 'disconnected';
@@ -123,6 +141,7 @@
       joinBtn.textContent = 'Join';
       nameEl.disabled = false; shuffleBtn.disabled = false;
       if (inputIv) { clearInterval(inputIv); inputIv = null; }
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
       if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler=null; }
       if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler=null; }
     }
@@ -142,10 +161,14 @@
         joinBtn.textContent = 'Leave';
         nameEl.disabled = true; shuffleBtn.disabled = true;
       });
+      latency = createLatencyMonitor(ws);
+      if (pingIv) { clearInterval(pingIv); pingIv = null; }
+      pingIv = setInterval(() => { try { latency.sendPing(); } catch {} }, 1000);
       ws.addEventListener('message', (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'joined') { arena = msg.arena; }
         if (msg.type === 'state') {
+          stateMsgCount++;
           // impact effects
           const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
           for (const [id,pos] of prevBulletPos){ if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220}); }
@@ -162,8 +185,11 @@
             chatInput.disabled = !msg.chatEnabled;
             chatInput.placeholder = msg.chatEnabled ? 'Chat...' : 'Chat disabled by streamer';
             const chatCard = chatMessagesEl.closest('.card');
-            if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
+          if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
           }
+        }
+        if (msg.type === 'pong') {
+          if (latency) latency.handlePong(Number(msg.timestamp)||0);
         }
         if (msg.type === 'chat') {
           appendChat(msg.from, msg.message);
@@ -334,9 +360,38 @@
       timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, '0')}`;
     }
 
-    // Animation loop
+    // Animation loop + nerd stats
     let last = performance.now();
-    function loop(){ const now=performance.now(); const dt=now-last; last=now; draw(dt); requestAnimationFrame(loop); }
+    const fpsSamples = [];
+    const fpsWindow = 120; // ~2s at 60fps
+    let lastNerdUpdate = 0;
+    function loop(){
+      const now=performance.now(); const dt=now-last; last=now; draw(dt);
+      const fps = dt>0 ? 1000/dt : 0; fpsSamples.push(fps); if (fpsSamples.length>fpsWindow) fpsSamples.shift();
+      if (now - lastStateRateAt >= 1000){ statesPerSec = stateMsgCount; stateMsgCount = 0; lastStateRateAt = now; }
+      if (nerdOn && now - lastNerdUpdate > 250){
+        const avgFps = fpsSamples.length ? (fpsSamples.reduce((a,b)=>a+b,0)/fpsSamples.length) : 0;
+        const minFps = fpsSamples.length ? Math.min(...fpsSamples) : 0;
+        const maxFps = fpsSamples.length ? Math.max(...fpsSamples) : 0;
+        const lat = latency ? latency.getLatencyStats() : { avg:0, min:0, max:0, jitter:0 };
+        const players = state.players?.length||0;
+        const zombies = state.players?.filter(p=>p.role==='zombie').length||0;
+        const bullets = state.bullets?.length||0;
+        const pickups = state.pickups?.length||0;
+        const walls = state.walls?.length||0;
+        const wsBuf = ws && ws.bufferedAmount || 0;
+        nerdPanel.innerHTML = `
+          <div><strong>Nerd Stats</strong></div>
+          <div>FPS: ${avgFps.toFixed(1)} (min ${minFps.toFixed(0)} max ${maxFps.toFixed(0)})</div>
+          <div>Latency: ${lat.avg.toFixed(1)} ms (min ${lat.min.toFixed(0)} max ${lat.max.toFixed(0)}) jitter ${lat.jitter.toFixed(1)} ms</div>
+          <div>States/s: ${statesPerSec.toFixed(0)}</div>
+          <div>Entities: players ${players} (z ${zombies}) bullets ${bullets} pickups ${pickups} walls ${walls}</div>
+          <div>WS buf: ${wsBuf}</div>
+        `;
+        lastNerdUpdate = now;
+      }
+      requestAnimationFrame(loop);
+    }
     loop();
 
     // Fullscreen

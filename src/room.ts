@@ -23,13 +23,24 @@ export interface Env {
 
 type Vec = { x: number; y: number };
 
+interface Input {
+  up: boolean;
+  down: boolean;
+  left: boolean;
+  right: boolean;
+  shoot: boolean;
+  aimX: number;
+  aimY: number;
+  melee?: boolean;
+}
+
 interface Player {
   id: string;
   role: "streamer" | "zombie";
   name: string;
   pos: Vec;
   vel: Vec;
-  input: { up: boolean; down: boolean; left: boolean; right: boolean; shoot: boolean; aimX: number; aimY: number; melee?: boolean };
+  input: Input;
   ws?: WebSocket;
   score: number; // streamer uses; zombies optional
   alive: boolean;
@@ -51,6 +62,10 @@ interface Player {
   shotgunAmmo?: number;
   meleeDirX?: number;
   meleeDirY?: number;
+  // Lag compensation
+  lagMs?: number;
+  inputBuffer?: Array<{input: Input, timestamp: number}>;
+  lastInputTime?: number;
 }
 
 interface Bullet {
@@ -79,10 +94,14 @@ export class RoomDO {
   walls: Rect[] = [];
   pickups: Pickup[] = [];
 
-  // Loop
-  tickMs = 50; // 20Hz
+  // Loop - Different tick rates for different systems
+  tickMs = 50; // 20Hz - main game loop
+  uiTickMs = 200; // 5Hz - UI updates
+  pickupTickMs = 500; // 2Hz - pickup spawning checks
   running = false;
   loopTimer: number | undefined;
+  uiTimer: number | undefined;
+  pickupTimer: number | undefined;
   FIRE_COOLDOWN_MS = 180; // streamer fire cooldown
   lastPickupSpawn = Date.now();
   pickupIntervalMs = 12000; // spawn every 12s
@@ -131,17 +150,55 @@ export class RoomDO {
   startLoop() {
     this.running = true;
     if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
+    
+    // Main game loop - 20Hz (includes state broadcast for responsiveness)
     const step = () => {
       this.update();
       this.broadcastState();
       this.loopTimer = setTimeout(step, this.tickMs) as unknown as number;
     };
     this.loopTimer = setTimeout(step, this.tickMs) as unknown as number;
+    
+    // Pickup spawning - 2Hz (non-critical)
+    const pickupStep = () => {
+      this.checkPickupSpawning();
+      this.pickupTimer = setTimeout(pickupStep, this.pickupTickMs) as unknown as number;
+    };
+    this.pickupTimer = setTimeout(pickupStep, this.pickupTickMs) as unknown as number;
   }
 
   stopLoop() {
     if (this.loopTimer) clearTimeout(this.loopTimer as unknown as number);
+    if (this.pickupTimer) clearTimeout(this.pickupTimer as unknown as number);
     this.running = false;
+  }
+
+  // Separate pickup spawning logic for reduced tick rate
+  checkPickupSpawning() {
+    const now = Date.now();
+    if (now - this.lastPickupSpawn > this.pickupIntervalMs) {
+      this.lastPickupSpawn = now;
+      const totalCap = 12;
+      if (this.pickups.length < totalCap) {
+        const caps = { health: 3, speed: 3, ammo: 3, weapon: 2, shield: 2, magnet: 2, freeze: 1, blast: 2, treasure: 3 } as Record<PickupType, number>;
+        const counts = { health:0, speed:0, ammo:0, weapon:0, shield:0, magnet:0, freeze:0, blast:0, treasure:0 } as Record<PickupType, number>;
+        for (const pk of this.pickups) counts[pk.type]++;
+        const types: PickupType[] = ["health","speed","ammo","weapon","shield","magnet","freeze","blast","treasure"]; 
+        // Weighted pick: prefer under-cap types
+        const options: PickupType[] = [];
+        for (const t of types){
+          const room = Math.max(0, caps[t]-counts[t]);
+          for (let i=0;i<room;i++) options.push(t);
+        }
+        if (options.length > 0) {
+          const type = options[Math.floor(Math.random()*options.length)];
+          const pos = this.randomFreePos(28);
+          if (pos && this.okDistanceFromPickups(pos.x, pos.y, 48)) {
+            this.pickups.push({ id: crypto.randomUUID().slice(0,6), type, x: pos.x, y: pos.y });
+          }
+        }
+      }
+    }
   }
 
   onMessage(ws: WebSocket, pid: string, ev: MessageEvent) {
@@ -195,7 +252,10 @@ export class RoomDO {
         case "input": {
           const p = this.players.get(pid);
           if (!p) return;
-          p.input = {
+          const now = Date.now();
+          
+          // Process input with lag compensation
+          this.processInputWithLagCompensation(p, {
             up: !!msg.up,
             down: !!msg.down,
             left: !!msg.left,
@@ -204,8 +264,18 @@ export class RoomDO {
             aimX: Number(msg.aimX) || 0,
             aimY: Number(msg.aimY) || 0,
             melee: !!msg.melee,
-          };
-          p.lastSeen = Date.now();
+          }, msg.timestamp || now);
+          
+          p.lastSeen = now;
+          break;
+        }
+        case "ping": {
+          const p = this.players.get(pid);
+          if (!p) return;
+          // Echo back ping for RTT measurement
+          try {
+            p.ws?.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+          } catch {}
           break;
         }
         case "toggle_chat": {
@@ -713,6 +783,29 @@ export class RoomDO {
       return { x, y };
     }
     return null;
+  }
+
+  // Lag compensation method
+  processInputWithLagCompensation(player: Player, input: Input, timestamp: number) {
+    const now = Date.now();
+    
+    // Calculate lag
+    if (player.lastInputTime) {
+      const timeDiff = now - player.lastInputTime;
+      player.lagMs = Math.max(0, Math.min(500, timeDiff)); // Cap at 500ms
+    }
+    
+    // Store input in buffer for potential rollback
+    if (!player.inputBuffer) player.inputBuffer = [];
+    player.inputBuffer.push({ input: { ...input }, timestamp });
+    
+    // Keep only recent inputs (1 second)
+    const cutoff = now - 1000;
+    player.inputBuffer = player.inputBuffer.filter(i => i.timestamp > cutoff);
+    
+    // Apply input immediately (server authoritative)
+    player.input = input;
+    player.lastInputTime = now;
   }
 
   circleIntersectsAnyWall(x:number,y:number,r:number){
