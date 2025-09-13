@@ -74,6 +74,9 @@
     let state = { players:[], bullets:[], arena, remainingTime: 0 };
     const input = inputController({ mouse:false });
     const effects = [];
+    // Dash trails for streamer visibility from zombie clients
+    const trails = new Map(); // id -> Array<{x:number,y:number,t:number}>
+    const TRAIL_TTL = 260; const TRAIL_MAX = 22;
     let prevBulletPos = new Map();
 
     const status = document.getElementById('status');
@@ -229,12 +232,12 @@
       inputIv = setInterval(() => {
         if (ws && ws.readyState===1) {
           const { up,down,left,right } = input;
-          ws.send(JSON.stringify({ type:'input', up, down, left, right, shoot:false, aimX:0, aimY:0 }));
+          ws.send(JSON.stringify({ type:'input', up, down, left, right, shoot:false, melee:false, dash:false, aimX:0, aimY:0 }));
         }
       }, 50);
 
       // If the tab loses focus while holding a key, send a neutral input
-      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, aimX:0, aimY:0 })); };
+      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, dash:false, aimX:0, aimY:0 })); };
       visHandler = () => { if (document.hidden) sendNeutralHandler(); };
       window.addEventListener('blur', sendNeutralHandler);
       document.addEventListener('visibilitychange', visHandler);
@@ -370,27 +373,48 @@
       }
       // Bullet impact effects
       for (let i=effects.length-1;i>=0;i--){ const e=effects[i]; e.ttl-=dt; if (e.ttl<=0){ effects.splice(i,1); continue; } ctx.save(); const a=Math.max(0,e.ttl/220); ctx.globalAlpha=a; ctx.strokeStyle='#ffd54f'; ctx.beginPath(); ctx.arc(e.x,e.y,(1-a)*12+2,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+      // Players' dash trails under characters
+      const nowT = performance.now();
+      if (state.players){
+        for (const p of state.players){
+          const sp = getSmoothedPos(p.id, p.x, p.y, 0);
+          let arr = trails.get(p.id) || [];
+          if (p.dashing){ arr.push({ x: sp.x, y: sp.y, t: nowT }); if (arr.length > TRAIL_MAX) arr.shift(); }
+          arr = arr.filter(pt => nowT - pt.t <= TRAIL_TTL);
+          trails.set(p.id, arr);
+          if (arr.length >= 2){
+            for (let i=0;i<arr.length;i++){
+              const age = nowT - arr[i].t;
+              const a = Math.max(0, 1 - (age / TRAIL_TTL));
+              const r = 6 + 10 * a;
+              ctx.save(); ctx.globalAlpha = 0.22 + 0.4*a; ctx.fillStyle='rgba(158,241,209,1)'; ctx.shadowColor='rgba(158,241,209,.7)'; ctx.shadowBlur=12*a; ctx.beginPath(); ctx.arc(arr[i].x,arr[i].y,r,0,Math.PI*2); ctx.fill(); ctx.restore();
+            }
+          }
+        }
+      }
+
       // Players
       ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
       ctx.textAlign = 'center';
       for (const p of state.players){
+        const sp = getSmoothedPos(p.id, p.x, p.y, dt);
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 0;
         if (p.role==='streamer'){
           ctx.strokeStyle = '#4caf50';
           ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.stroke();
-          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+          ctx.beginPath(); ctx.arc(sp.x,sp.y,10,0,Math.PI*2); ctx.stroke();
+          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, sp.x, sp.y - 16);
         } else {
           ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
-          ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
-          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.8; ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
-          ctx.fillStyle = '#e57373'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+          ctx.beginPath(); ctx.arc(sp.x,sp.y,12,0,Math.PI*2); ctx.fill();
+          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.8; ctx.beginPath(); ctx.arc(sp.x,sp.y,16,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+          ctx.fillStyle = '#e57373'; ctx.globalAlpha = .95; ctx.fillText(p.name, sp.x, sp.y - 16);
           // Emote above zombie head for 5s
           if (p.emote && (p.emoteUntil||0) > Date.now()){
             ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
             ctx.globalAlpha = 1;
-            ctx.fillText(p.emote, p.x, p.y - 32);
+            ctx.fillText(p.emote, sp.x, sp.y - 32);
             ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
           }
         }
@@ -405,10 +429,10 @@
           ctx.globalAlpha = Math.max(0, alpha*0.9);
           ctx.fillStyle = 'rgba(255,213,79,0.35)';
           ctx.beginPath();
-          ctx.moveTo(p.x + Math.cos(ang - span/2)*r0, p.y + Math.sin(ang - span/2)*r0);
-          ctx.arc(p.x, p.y, r1, ang - span/2, ang + span/2);
-          ctx.lineTo(p.x + Math.cos(ang + span/2)*r0, p.y + Math.sin(ang + span/2)*r0);
-          ctx.arc(p.x, p.y, r0, ang + span/2, ang - span/2, true);
+          ctx.moveTo(sp.x + Math.cos(ang - span/2)*r0, sp.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(sp.x, sp.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(sp.x + Math.cos(ang + span/2)*r0, sp.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(sp.x, sp.y, r0, ang + span/2, ang - span/2, true);
           ctx.closePath();
           ctx.fill();
           ctx.restore();
@@ -429,6 +453,9 @@
       ctx.fillStyle = '#cfd8dc'; ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
       ctx.fillText(`Extract: ${activeEx?extractLeft+'s':'—'}`, x0+10, y0+18);
       ctx.restore();
+
+      // Mini-map (bottom-right)
+      drawMiniMap();
 
       // Screen border on top
       ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,rect.width-2,rect.height-2); ctx.restore();
@@ -483,6 +510,47 @@
       if (!document.fullscreenElement) { await document.documentElement.requestFullscreen().catch(()=>{}); }
       else { await document.exitFullscreen().catch(()=>{}); }
     };
+
+    function drawMiniMap(){
+      const rect = c.getBoundingClientRect();
+      const mmSize = 160; const pad = 12; const cx = rect.width - pad - mmSize/2; const cy = rect.height - pad - mmSize/2;
+      const R = (mmSize/2) - 4;
+      const W = (state.arena && state.arena.w) || 960; const H = (state.arena && state.arena.h) || 540;
+      const scale = (2*R) / Math.max(W, H);
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = 'rgba(18,20,24,.86)';
+      ctx.beginPath(); ctx.arc(cx, cy, mmSize/2, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.clip();
+      if (state.walls) {
+        ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1;
+        for (const w of state.walls){
+          const x = cx + (w.x - W/2) * scale; const y = cy + (w.y - H/2) * scale;
+          const ww = w.w * scale; const hh = w.h * scale;
+          ctx.strokeRect(x, y, ww, hh);
+        }
+      }
+      if (state.extractions){
+        for (const ex of state.extractions){
+          const active = (ex.activeUntil||0) > Date.now();
+          ctx.beginPath(); ctx.strokeStyle = active ? '#81c784' : 'rgba(129,199,132,.4)'; ctx.lineWidth = active ? 2 : 1;
+          ctx.arc(cx + (ex.x - W/2)*scale, cy + (ex.y - H/2)*scale, Math.max(1, ex.r*scale), 0, Math.PI*2);
+          ctx.stroke();
+        }
+      }
+      if (state.players){
+        for (const p of state.players){
+          const px = cx + (p.x - W/2) * scale; const py = cy + (p.y - H/2) * scale;
+          const r = p.role==='streamer' ? 3 : 2;
+          ctx.beginPath();
+          ctx.fillStyle = p.role==='streamer' ? '#4caf50' : (p.alive ? '#ef5350' : 'rgba(239,83,80,.4)');
+          ctx.arc(px, py, r, 0, Math.PI*2); ctx.fill();
+          if (p.id === playerId) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); }
+        }
+      }
+      ctx.restore(); ctx.restore();
+    }
   </script>
 </body>
 </html>

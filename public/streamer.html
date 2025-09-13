@@ -92,6 +92,10 @@
     let lastScore = 0;
     const effects = []; // bullet impacts etc {x,y,ttl}
     let prevBulletPos = new Map();
+    // Dash trails: per-player history of recent positions while dashing
+    const trails = new Map(); // id -> Array<{x:number,y:number,t:number}>
+    const TRAIL_TTL = 260; // ms
+    const TRAIL_MAX = 22;
     // Local melee feedback (client-side prediction so streamer sees instantly)
     let localMeleeAt = 0; let localMeleeDirX = 1; let localMeleeDirY = 0; let prevMelee = false;
 
@@ -223,7 +227,7 @@
           // Convert screen aim to world coordinates via camera + zoom
           const aimWX = camX + (input.aimX / zoom);
           const aimWY = camY + (input.aimY / zoom);
-          ws.send(JSON.stringify({ type:'input', up:input.up, down:input.down, left:input.left, right:input.right, shoot:input.shoot, melee:input.melee, aimX:aimWX, aimY:aimWY }));
+          ws.send(JSON.stringify({ type:'input', up:input.up, down:input.down, left:input.left, right:input.right, shoot:input.shoot, melee:input.melee, dash:input.dash, aimX:aimWX, aimY:aimWY }));
         }
       }, 50);
 
@@ -232,7 +236,7 @@
         if (ws && ws.readyState===1) {
           const aimWX = camX + (input.aimX / zoom);
           const aimWY = camY + (input.aimY / zoom);
-          ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, aimX:aimWX, aimY:aimWY }));
+          ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, dash:false, aimX:aimWX, aimY:aimWY }));
         }
       };
       visHandler = () => { if (document.hidden) sendNeutralHandler(); };
@@ -260,6 +264,18 @@
       updatePlayerList([]);
     }
 
+    // Smoothing map for positions (reduces 20Hz stutter)
+    const smooth = new Map(); // id -> {x,y}
+    const SMOOTH_TAU = 90; // ms time constant
+    function getSmoothedPos(id, tx, ty, dt){
+      let s = smooth.get(id);
+      if (!s) { s = { x: tx, y: ty }; smooth.set(id, s); return { x: tx, y: ty }; }
+      const alpha = 1 - Math.exp(-dt / Math.max(1, SMOOTH_TAU));
+      s.x += (tx - s.x) * alpha;
+      s.y += (ty - s.y) * alpha;
+      return { x: s.x, y: s.y };
+    }
+
     function draw(dt=16){
       const dpr = Math.max(1, Math.min(3, window.devicePixelRatio||1));
       const rect = c.getBoundingClientRect();
@@ -272,7 +288,8 @@
       ctx.fillStyle = '#000000';
       ctx.fillRect(0,0, rect.width, rect.height);
       // Update camera target (follow player with slight mouse bias)
-      const meCam = state.players.find(p=>p.id===playerId);
+      const meRawForCam = state.players.find(p=>p.id===playerId);
+      const meCam = meRawForCam ? getSmoothedPos(meRawForCam.id, meRawForCam.x, meRawForCam.y, dt) : null;
       if (meCam) {
         const aimWX = camX + (input.aimX / zoom);
         const aimWY = camY + (input.aimY / zoom);
@@ -417,23 +434,57 @@
         }
         prevMelee = input.melee;
       }
+      // Update and draw dash trails (under players)
+      const nowT = performance.now();
+      if (state.players){
+        for (const p of state.players){
+          const sp = getSmoothedPos(p.id, p.x, p.y, 0); // position for trail sampling
+          let arr = trails.get(p.id) || [];
+          // Append when dashing
+          if (p.dashing) {
+            arr.push({ x: sp.x, y: sp.y, t: nowT });
+            if (arr.length > TRAIL_MAX) arr.shift();
+          }
+          // Prune old
+          arr = arr.filter(pt => nowT - pt.t <= TRAIL_TTL);
+          trails.set(p.id, arr);
+          // Draw trail
+          if (arr.length >= 2) {
+            for (let i = 0; i < arr.length; i++){
+              const age = nowT - arr[i].t;
+              const a = Math.max(0, 1 - (age / TRAIL_TTL));
+              const r = 6 + 10 * a;
+              ctx.save();
+              // teal-ish trail with soft glow
+              ctx.globalAlpha = 0.25 + 0.45 * a;
+              ctx.fillStyle = 'rgba(158,241,209,1)';
+              ctx.shadowColor = 'rgba(158,241,209,.8)';
+              ctx.shadowBlur = 14 * a;
+              ctx.beginPath(); ctx.arc(arr[i].x, arr[i].y, r, 0, Math.PI*2); ctx.fill();
+              ctx.restore();
+            }
+          }
+        }
+      }
+
       for (const p of state.players){
+        const sp = getSmoothedPos(p.id, p.x, p.y, dt);
         ctx.save();
         if (p.role==='streamer'){
           ctx.strokeStyle = '#4caf50';
-          ctx.beginPath(); ctx.arc(p.x,p.y,10,0,Math.PI*2); ctx.stroke();
-          if (p.weaponed){ ctx.strokeStyle='#ffa726'; ctx.globalAlpha=.6; ctx.beginPath(); ctx.arc(p.x,p.y,14,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
-          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, p.x, p.y - 16);
+          ctx.beginPath(); ctx.arc(sp.x,sp.y,10,0,Math.PI*2); ctx.stroke();
+          if (p.weaponed){ ctx.strokeStyle='#ffa726'; ctx.globalAlpha=.6; ctx.beginPath(); ctx.arc(sp.x,sp.y,14,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+          ctx.fillStyle = '#4caf50'; ctx.globalAlpha = .95; ctx.fillText(p.name, sp.x, sp.y - 16);
         } else {
           ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
-          ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2); ctx.fill();
-          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.7; ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2); ctx.stroke(); }
-          ctx.globalAlpha = .95; ctx.fillStyle = '#e57373'; ctx.fillText(p.name, p.x, p.y - 16);
+          ctx.beginPath(); ctx.arc(sp.x,sp.y,12,0,Math.PI*2); ctx.fill();
+          if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.7; ctx.beginPath(); ctx.arc(sp.x,sp.y,16,0,Math.PI*2); ctx.stroke(); }
+          ctx.globalAlpha = .95; ctx.fillStyle = '#e57373'; ctx.fillText(p.name, sp.x, sp.y - 16);
           // Emote above zombie head for 5s
           if (p.emote && (p.emoteUntil||0) > Date.now()){
             ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
             ctx.globalAlpha = 1;
-            ctx.fillText(p.emote, p.x, p.y - 32);
+            ctx.fillText(p.emote, sp.x, sp.y - 32);
             ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
           }
         }
@@ -448,10 +499,10 @@
           ctx.globalAlpha = Math.max(0, alpha*0.9);
           ctx.fillStyle = 'rgba(255,213,79,0.35)';
           ctx.beginPath();
-          ctx.moveTo(p.x + Math.cos(ang - span/2)*r0, p.y + Math.sin(ang - span/2)*r0);
-          ctx.arc(p.x, p.y, r1, ang - span/2, ang + span/2);
-          ctx.lineTo(p.x + Math.cos(ang + span/2)*r0, p.y + Math.sin(ang + span/2)*r0);
-          ctx.arc(p.x, p.y, r0, ang + span/2, ang - span/2, true);
+          ctx.moveTo(sp.x + Math.cos(ang - span/2)*r0, sp.y + Math.sin(ang - span/2)*r0);
+          ctx.arc(sp.x, sp.y, r1, ang - span/2, ang + span/2);
+          ctx.lineTo(sp.x + Math.cos(ang + span/2)*r0, sp.y + Math.sin(ang + span/2)*r0);
+          ctx.arc(sp.x, sp.y, r0, ang + span/2, ang - span/2, true);
           ctx.closePath();
           ctx.fill();
           ctx.restore();
@@ -459,14 +510,13 @@
         ctx.restore();
       }
 
-      // Crosshair and aim line for local player (world coordinates)
+      // Crosshair for local player (world coordinates)
       me = state.players.find(p=>p.id===playerId);
       if (me){
         const aimWX = camX + (input.aimX / zoom);
         const aimWY = camY + (input.aimY / zoom);
         ctx.save();
         ctx.strokeStyle = 'rgba(255,255,255,.5)';
-        ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(aimWX, aimWY); ctx.stroke();
         ctx.beginPath(); ctx.arc(aimWX, aimWY, 6, 0, Math.PI*2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(aimWX-8,aimWY); ctx.lineTo(aimWX+8,aimWY); ctx.moveTo(aimWX,aimWY-8); ctx.lineTo(aimWX,aimWY+8); ctx.stroke();
         ctx.restore();
@@ -523,7 +573,6 @@
       const hudLines = [
         `Extract: ${activeEx?extractLeft+'s':'—'}`,
         `Score: ${meHud?meHud.score:0}  Banked: ${meHud?meHud.banked:0}`,
-        `Weapon: ${weapon}  Ammo: ${ammo}`,
       ];
       const pad = 8; const lineH = 16; const boxW = 220; const boxH = pad*2 + hudLines.length*lineH;
       const x0 = rect.width - boxW - 12; const y0 = 12;
@@ -533,6 +582,50 @@
       ctx.fillStyle = '#cfd8dc'; ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
       for (let i=0;i<hudLines.length;i++){ ctx.fillText(hudLines[i], x0+10, y0+pad + (i+1)*lineH - 4); }
       ctx.restore();
+
+      // Dash cooldown indicator (bottom-center) — doubled size
+      if (meHud) {
+        const readyAt = meHud.dashReadyAt || 0;
+        const lastAt = meHud.lastDashAt || 0;
+        const nowMs = Date.now();
+        const total = Math.max(1, readyAt - lastAt);
+        const remain = Math.max(0, readyAt - nowMs);
+        const frac = 1 - Math.min(1, remain / total);
+        const meterPad = 24; // padding from bottom
+        const r2 = 24; // doubled radius
+        const cx2 = rect.width / 2;
+        const cy2 = rect.height - meterPad - 52; // push up to fit bigger meter
+        ctx.save();
+        // backdrop behind the meter
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = 'rgba(18,20,24,.86)'; ctx.strokeStyle = 'rgba(255,255,255,.08)';
+        ctx.lineWidth = 2; roundRect(ctx, cx2-52, cy2-52, 104, 110, 28, true, true);
+        // background circle
+        ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 6; ctx.arc(cx2, cy2, r2, 0, Math.PI*2); ctx.stroke();
+        // progress arc
+        ctx.beginPath(); ctx.strokeStyle = (remain<=0) ? '#2dd4bf' : '#90caf9'; ctx.lineWidth = 7; ctx.arc(cx2, cy2, r2, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac); ctx.stroke();
+        // label below meter
+        ctx.fillStyle = '#cfd8dc'; ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+        ctx.textAlign = 'center'; ctx.fillText('Dash', cx2, cy2 + 48);
+        ctx.restore();
+      }
+
+      // Weapon/Ammo (bottom-left) — doubled size
+      if (meHud) {
+        const padBL = 12;
+        const boxW2 = 340, boxH2 = 80;
+        const xBL = padBL, yBL = rect.height - boxH2 - padBL;
+        ctx.save();
+        ctx.globalAlpha = .95; ctx.fillStyle = 'rgba(18,20,24,.86)'; ctx.strokeStyle = 'rgba(255,255,255,.08)';
+        ctx.lineWidth = 2; roundRect(ctx, xBL, yBL, boxW2, boxH2, 24, true, true);
+        ctx.fillStyle = '#cfd8dc'; ctx.font = '20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+        ctx.fillText(`Weapon: ${weapon}`, xBL + 20, yBL + 32);
+        ctx.fillText(`Ammo: ${ammo}`, xBL + 20, yBL + 64);
+        ctx.restore();
+      }
+
+      // Mini-map (bottom-right, circular)
+      drawMiniMap();
 
       // Screen-space border overlay
       ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,rect.width-2,rect.height-2);
@@ -554,6 +647,53 @@
       ctx.closePath();
       if (fill) ctx.fill();
       if (stroke) ctx.stroke();
+    }
+
+    function drawMiniMap(){
+      const rect = c.getBoundingClientRect();
+      const mmSize = 160; const pad = 12; const cx = rect.width - pad - mmSize/2; const cy = rect.height - pad - mmSize/2;
+      const R = (mmSize/2) - 4;
+      const W = (state.arena && state.arena.w) || 960; const H = (state.arena && state.arena.h) || 540;
+      const scale = (2*R) / Math.max(W, H);
+      // frame
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = 'rgba(18,20,24,.86)';
+      ctx.beginPath(); ctx.arc(cx, cy, mmSize/2, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 2; ctx.stroke();
+      // clip to circle
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.clip();
+      // walls
+      if (state.walls) {
+        ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1;
+        for (const w of state.walls){
+          const x = cx + (w.x - W/2) * scale; const y = cy + (w.y - H/2) * scale;
+          const ww = w.w * scale; const hh = w.h * scale;
+          ctx.strokeRect(x, y, ww, hh);
+        }
+      }
+      // extractions
+      if (state.extractions){
+        for (const ex of state.extractions){
+          const active = (ex.activeUntil||0) > Date.now();
+          ctx.beginPath(); ctx.strokeStyle = active ? '#81c784' : 'rgba(129,199,132,.4)'; ctx.lineWidth = active ? 2 : 1;
+          ctx.arc(cx + (ex.x - W/2)*scale, cy + (ex.y - H/2)*scale, Math.max(1, ex.r*scale), 0, Math.PI*2);
+          ctx.stroke();
+        }
+      }
+      // players
+      if (state.players){
+        for (const p of state.players){
+          const px = cx + (p.x - W/2) * scale; const py = cy + (p.y - H/2) * scale;
+          const r = p.role==='streamer' ? 3 : 2;
+          ctx.beginPath();
+          ctx.fillStyle = p.role==='streamer' ? '#4caf50' : (p.alive ? '#ef5350' : 'rgba(239,83,80,.4)');
+          ctx.arc(px, py, r, 0, Math.PI*2); ctx.fill();
+          if (p.id === playerId) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); }
+        }
+      }
+      ctx.restore(); // unclip
+      ctx.restore();
     }
 
     function updatePlayerList(players){

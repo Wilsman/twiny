@@ -227,6 +227,8 @@ canvas.arena {
     0 12px 36px rgba(0,0,0,.55);
   animation: grid-pan 26s linear infinite;
 }
+/* Hide system cursor when hovering the game canvas */
+canvas.arena:hover { cursor: none; }
 canvas.arena:focus { outline: none; }
 canvas.arena::after {
   content: "";

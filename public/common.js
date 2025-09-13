@@ -70,11 +70,11 @@ export function minimalCanvas(w, h) {
 }
 
 export function inputController(opts={ mouse:true }) {
-  const state = { up:false,down:false,left:false,right:false,shoot:false,melee:false,aimX:0,aimY:0 };
+  const state = { up:false,down:false,left:false,right:false,shoot:false,melee:false,dash:false,aimX:0,aimY:0 };
   addEventListener("keydown", e => { if (e.repeat) return; if (e.key==="w"||e.key==="ArrowUp") state.up=true;
-    if (e.key==="s"||e.key==="ArrowDown") state.down=true; if (e.key==="a"||e.key==="ArrowLeft") state.left=true; if (e.key==="d"||e.key==="ArrowRight") state.right=true; if (e.key==="q"||e.key==="e") state.melee=true; });
+    if (e.key==="s"||e.key==="ArrowDown") state.down=true; if (e.key==="a"||e.key==="ArrowLeft") state.left=true; if (e.key==="d"||e.key==="ArrowRight") state.right=true; if (e.key==="q"||e.key==="e") state.melee=true; if (e.code==="Space") state.dash=true; });
   addEventListener("keyup", e => { if (e.key==="w"||e.key==="ArrowUp") state.up=false;
-    if (e.key==="s"||e.key==="ArrowDown") state.down=false; if (e.key==="a"||e.key==="ArrowLeft") state.left=false; if (e.key==="d"||e.key==="ArrowRight") state.right=false; if (e.key==="q"||e.key==="e") state.melee=false; });
+    if (e.key==="s"||e.key==="ArrowDown") state.down=false; if (e.key==="a"||e.key==="ArrowLeft") state.left=false; if (e.key==="d"||e.key==="ArrowRight") state.right=false; if (e.key==="q"||e.key==="e") state.melee=false; if (e.code==="Space") state.dash=false; });
   if (opts.mouse) {
     addEventListener("mousemove", e => { const rect = document.querySelector("canvas.arena").getBoundingClientRect(); state.aimX = e.clientX - rect.left; state.aimY = e.clientY - rect.top; });
     // Pointer/mouse shooting handling
@@ -89,7 +89,7 @@ export function inputController(opts={ mouse:true }) {
     addEventListener("touchstart", (e) => { const t=e.touches[0]; const rect = document.querySelector("canvas.arena").getBoundingClientRect(); state.aimX=t.clientX-rect.left; state.aimY=t.clientY-rect.top; state.shoot=true; }, { passive:true });
     addEventListener("touchend", () => { state.shoot=false; }, { passive:true });
   }
-  const resetAll = () => { state.up=false; state.down=false; state.left=false; state.right=false; state.shoot=false; state.melee=false; };
+  const resetAll = () => { state.up=false; state.down=false; state.left=false; state.right=false; state.shoot=false; state.melee=false; state.dash=false; };
   addEventListener("blur", () => { resetAll(); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) resetAll(); });
   return state;
