@@ -180,6 +180,12 @@ button:hover {
 button:active { transform: translateY(1px); }
 button[disabled] { opacity: .5; cursor: default; }
 
+/* Weapon state styles */
+.weapon { opacity: .95; }
+.weapon.equipped { border-color: color-mix(in oklab, var(--teal) 35%, transparent); color: var(--teal); }
+.weapon.owned { border-color: rgba(255,255,255,.18); }
+.weapon.locked { opacity: .6; }
+
 /* ——— Badges / pills ——— */
 .badge {
   padding: 5px 9px;

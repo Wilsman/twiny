@@ -70,6 +70,15 @@ interface Player {
   lagMs?: number;
   inputBuffer?: Array<{input: Input, timestamp: number}>;
   lastInputTime?: number;
+  // Zombie class fields
+  zClass?: "runner" | "brute" | "spitter";
+  zHp?: number;
+  zMaxHp?: number;
+  nextSpitAt?: number;
+  lastAbilityAt?: number;
+  chargeUntil?: number;
+  chargeDirX?: number;
+  chargeDirY?: number;
 }
 
 interface Bullet {
@@ -99,6 +108,8 @@ export class RoomDO {
   // Entities
   players = new Map<string, Player>();
   bullets: Bullet[] = [];
+  // Spitter globs (enemy projectiles)
+  spittles: Array<{ id: string; pos: Vec; vel: Vec; ttl: number } > = [];
   walls: Rect[] = [];
   pickups: Pickup[] = [];
   // M1: extractions and optional future zones
@@ -245,8 +256,8 @@ export class RoomDO {
           maxHp: role === "streamer" ? CONFIG.streamer.maxHp : undefined,
           weapon: role === "streamer" ? "pistol" : undefined,
           pistolAmmo: role === "streamer" ? CONFIG.weapons.ammo.initial.pistol : undefined,
-          smgAmmo: role === "streamer" ? CONFIG.weapons.ammo.initial.smg : undefined,
-          shotgunAmmo: role === "streamer" ? CONFIG.weapons.ammo.initial.shotgun : undefined,
+          smgAmmo: role === "streamer" ? 0 : undefined,
+          shotgunAmmo: role === "streamer" ? 0 : undefined,
           banked: role === "streamer" ? 0 : undefined,
         };
         // Enforce single-streamer per room. Downgrade to zombie if already present.
@@ -261,6 +272,18 @@ export class RoomDO {
             try { ws.send(JSON.stringify({ type: "notice", message: "Streamer already active. You joined as a zombie." })); } catch {}
           }
         }
+        // Assign class stats if zombie after potential downgrade
+        if (p.role === 'zombie') {
+          const zc = this.pickZombieClass();
+          p.zClass = zc;
+          const base = CONFIG.zombies.baseHp;
+          p.zMaxHp = Math.max(1, Math.round(base * CONFIG.zombies.hpMul[zc]));
+          p.zHp = p.zMaxHp;
+          if (zc === 'spitter') {
+            p.nextSpitAt = Date.now() + this.randRange(CONFIG.zombies.spitter.cooldownMsMin, CONFIG.zombies.spitter.cooldownMsMax);
+          }
+        }
+
         this.players.set(pid, p);
 
           ws.send(JSON.stringify({ type: "joined", playerId: pid, name, role, arena: { w: this.W, h: this.H } }));
@@ -315,6 +338,33 @@ export class RoomDO {
           if (!p) return;
           if (!this.chatEnabled && p.role !== "streamer") return;
           this.broadcast("chat", { from: p.name, message: msg.message });
+          break;
+        }
+        case "buy": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== 'streamer') return;
+          const item = String(msg.item||'');
+          const cost = 300;
+          const bank = p.banked || 0;
+          if (item === 'shotgun') {
+            if (bank >= cost) {
+              p.banked = bank - cost;
+              p.weapon = 'shotgun';
+              p.shotgunAmmo = Math.max(p.shotgunAmmo||0, CONFIG.weapons.ammo.initial.shotgun);
+              this.broadcast('notice', { message: `${p.name} purchased Shotgun! (-${cost} banked)` });
+            } else {
+              try { p.ws?.send(JSON.stringify({ type:'notice', message:`Not enough banked (need ${cost})` })); } catch {}
+            }
+          } else if (item === 'smg') {
+            if (bank >= cost) {
+              p.banked = bank - cost;
+              p.weapon = 'smg';
+              p.smgAmmo = Math.max(p.smgAmmo||0, CONFIG.weapons.ammo.initial.smg);
+              this.broadcast('notice', { message: `${p.name} purchased SMG! (-${cost} banked)` });
+            } else {
+              try { p.ws?.send(JSON.stringify({ type:'notice', message:`Not enough banked (need ${cost})` })); } catch {}
+            }
+          }
           break;
         }
         case "emote": {
@@ -380,7 +430,9 @@ export class RoomDO {
     const dt = this.tickMs / 1000;
     for (const p of this.players.values()) {
       let baseSpeed = p.role === "streamer" ? CONFIG.speeds.streamer : CONFIG.speeds.zombie; // px/s
+      if (p.role === 'zombie' && p.zClass) baseSpeed *= CONFIG.zombies.speedMul[p.zClass];
       if (p.role === "zombie" && (this.zombieSlowUntil || 0) > now) baseSpeed *= CONFIG.speeds.zombieSlowMultiplier; // global slow
+      if (p.role === 'streamer' && ((p as any).gooSlowUntil || 0) > now) baseSpeed *= CONFIG.zombies.spitter.streamerSlowMul;
       const boosted = p.role === "zombie" && (p.boostUntil || 0) > now;
       let speed = boosted ? baseSpeed * CONFIG.speeds.zombieBoostMultiplier : baseSpeed;
       let vx = 0, vy = 0;
@@ -388,6 +440,40 @@ export class RoomDO {
       if (p.input.down) vy += 1;
       if (p.input.left) vx -= 1;
       if (p.input.right) vx += 1;
+      // Zombie active abilities on left-click
+      let useCharge = false; let chargeSpeed = 0;
+      if (p.role === 'zombie' && p.zClass) {
+        const nowMs = now;
+        const since = nowMs - (p.lastAbilityAt || 0);
+        if (p.zClass === 'runner') {
+          if (p.input.shoot && since >= CONFIG.zombies.runnerAbility.cooldownMs) {
+            p.boostUntil = nowMs + CONFIG.zombies.runnerAbility.durationMs;
+            p.lastAbilityAt = nowMs;
+          }
+        } else if (p.zClass === 'brute') {
+          if (p.input.shoot && since >= CONFIG.zombies.bruteAbility.cooldownMs) {
+            const dirx = (p.input.aimX || p.pos.x) - p.pos.x;
+            const diry = (p.input.aimY || p.pos.y) - p.pos.y;
+            const d = Math.hypot(dirx, diry) || 1;
+            p.chargeDirX = dirx / d; p.chargeDirY = diry / d;
+            p.chargeUntil = nowMs + CONFIG.zombies.bruteAbility.durationMs;
+            p.lastAbilityAt = nowMs;
+          }
+          if ((p.chargeUntil || 0) > nowMs) {
+            useCharge = true; chargeSpeed = CONFIG.zombies.bruteAbility.speed;
+            vx = p.chargeDirX || 0; vy = p.chargeDirY || 0;
+          }
+        } else if (p.zClass === 'spitter') {
+          if (p.input.shoot && since >= CONFIG.zombies.spitter.manualCooldownMs) {
+            const dx = (p.input.aimX || p.pos.x) - p.pos.x;
+            const dy = (p.input.aimY || p.pos.y) - p.pos.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const s = CONFIG.zombies.spitter.projectileSpeed;
+            this.spittles.push({ id: crypto.randomUUID().slice(0,6), pos: { x: p.pos.x, y: p.pos.y }, vel: { x: (dx/d)*s, y: (dy/d)*s }, ttl: CONFIG.zombies.spitter.projectileTtl });
+            p.lastAbilityAt = nowMs;
+          }
+        }
+      }
       const len = Math.hypot(vx, vy) || 1;
       // Handle dash (streamer only)
       if (p.role === 'streamer') {
@@ -406,8 +492,9 @@ export class RoomDO {
           speed *= CONFIG.dash.speedMultiplier;
         }
       }
-      p.vel.x = (vx / len) * speed;
-      p.vel.y = (vy / len) * speed;
+      const moveSpeed = useCharge ? chargeSpeed : speed;
+      p.vel.x = (vx / len) * moveSpeed;
+      p.vel.y = (vy / len) * moveSpeed;
       p.pos.x = Math.max(0, Math.min(this.W, p.pos.x + p.vel.x * dt));
       p.pos.y = Math.max(0, Math.min(this.H, p.pos.y + p.vel.y * dt));
 
@@ -505,10 +592,16 @@ export class RoomDO {
             if (dist > reach) continue;
             const dot = (dx/dist||0)*nx + (dy/dist||0)*ny;
             if (dot > Math.cos(CONFIG.melee.arcRad)) {
-              z.alive = false;
-              const id = z.id;
-              setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; } }, 800);
-              p.score += 1;
+              // melee damage: treat as 100 damage
+              z.zHp = Math.max(0, (z.zHp ?? CONFIG.zombies.baseHp) - 100);
+              if ((z.zHp ?? 0) <= 0) {
+                z.alive = false;
+                // Drop ammo on zombie death
+                this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+                const id = z.id;
+                setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, CONFIG.combat.respawnMs);
+                p.score += 1;
+              }
             }
           }
           p.lastMeleeAt = nowMs;
@@ -537,16 +630,21 @@ export class RoomDO {
       }
       if (blocked) continue;
 
-      // Collision with zombies
+      // Collision with zombies (class-based HP)
       let hit = false;
       for (const p of this.players.values()) {
         if (p.role !== "zombie" || !p.alive) continue;
         const r = CONFIG.radii.zombie; // zombie radius
         if (Math.hypot(p.pos.x - b.pos.x, p.pos.y - b.pos.y) < r) {
-          p.alive = false;
-          // Respawn after short delay
-          const id = p.id;
-          setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; } }, CONFIG.combat.respawnMs);
+          const dmg = 100; // per-hit damage from streamer bullets
+          p.zHp = Math.max(0, (p.zHp ?? CONFIG.zombies.baseHp) - dmg);
+          if ((p.zHp ?? 0) <= 0) {
+            p.alive = false;
+            // Drop ammo on zombie death
+            this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: p.pos.x, y: p.pos.y });
+            const id = p.id;
+            setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, CONFIG.combat.respawnMs);
+          }
           // Reward streamer
           const s = [...this.players.values()].find(q => q.id === b.ownerId);
           if (s) s.score += 1;
@@ -557,9 +655,62 @@ export class RoomDO {
     }
     this.bullets = aliveBullets;
 
+    // Update spitter globs
+    const aliveGlobs: typeof this.spittles = [];
+    for (const g of this.spittles) {
+      g.ttl -= this.tickMs;
+      g.pos.x += g.vel.x * dt;
+      g.pos.y += g.vel.y * dt;
+      if (g.ttl <= 0) continue;
+      if (g.pos.x < 0 || g.pos.x > this.W || g.pos.y < 0 || g.pos.y > this.H) continue;
+      // collide with streamer
+      if (streamer) {
+        const r = CONFIG.radii.streamer + 2;
+        if (Math.hypot(streamer.pos.x - g.pos.x, streamer.pos.y - g.pos.y) < r) {
+          // apply slow and small damage
+          (streamer as any).gooSlowUntil = now + CONFIG.zombies.spitter.slowMs;
+          streamer.hp = Math.max(0, (streamer.hp ?? CONFIG.streamer.maxHp) - CONFIG.zombies.spitter.hitDamage);
+          continue; // glob consumed
+        }
+      }
+      aliveGlobs.push(g);
+    }
+    this.spittles = aliveGlobs;
+
     // Zombie damage to streamer
     const streamer = [...this.players.values()].find(p => p.role === "streamer");
     if (streamer) {
+      // Dash-kill pass: if streamer is dashing, kill non-brute zombies on contact
+      if ((streamer.dashUntil || 0) > now) {
+        for (const z of this.players.values()) {
+          if (z.role !== 'zombie' || !z.alive) continue;
+          const dist = Math.hypot(z.pos.x - streamer.pos.x, z.pos.y - streamer.pos.y);
+          const thresh = CONFIG.radii.zombie + CONFIG.radii.streamer;
+          if (dist <= thresh) {
+            if (z.zClass === 'brute') {
+              continue; // brutes resist dash kill
+            }
+            z.zHp = 0; z.alive = false;
+            // Drop ammo on zombie death
+            this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+            const id = z.id;
+            setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, CONFIG.combat.respawnMs);
+            streamer.score += 1;
+          }
+        }
+      }
+      // Spitter AI: fire globs toward streamer
+      for (const z of this.players.values()){
+        if (z.role !== 'zombie' || !z.alive || z.zClass !== 'spitter') continue;
+        const rng = CONFIG.zombies.spitter.range;
+        const dx = streamer.pos.x - z.pos.x; const dy = streamer.pos.y - z.pos.y; const dist = Math.hypot(dx, dy);
+        if (dist <= rng && (z.nextSpitAt || 0) <= now) {
+          const s = CONFIG.zombies.spitter.projectileSpeed;
+          const nx = (dx / (dist||1)); const ny = (dy / (dist||1));
+          this.spittles.push({ id: crypto.randomUUID().slice(0,6), pos: { x: z.pos.x, y: z.pos.y }, vel: { x: nx * s, y: ny * s }, ttl: CONFIG.zombies.spitter.projectileTtl });
+          z.nextSpitAt = now + this.randRange(CONFIG.zombies.spitter.cooldownMsMin, CONFIG.zombies.spitter.cooldownMsMax);
+        }
+      }
       for (const z of this.players.values()) {
         if (z.role !== "zombie" || !z.alive) continue;
         const dist = Math.hypot(z.pos.x - streamer.pos.x, z.pos.y - streamer.pos.y);
@@ -577,8 +728,9 @@ export class RoomDO {
             }
           }// Knockback streamer slightly
           const dx = streamer.pos.x - z.pos.x; const dy = streamer.pos.y - z.pos.y; const d = Math.hypot(dx, dy) || 1;
-          streamer.pos.x = Math.max(0, Math.min(this.W, streamer.pos.x + (dx / d) * CONFIG.combat.knockbackStep));
-          streamer.pos.y = Math.max(0, Math.min(this.H, streamer.pos.y + (dy / d) * CONFIG.combat.knockbackStep));
+          const kbMul = (z.zClass === 'brute') ? CONFIG.zombies.brute.extraKnockbackMul : 1;
+          streamer.pos.x = Math.max(0, Math.min(this.W, streamer.pos.x + (dx / d) * CONFIG.combat.knockbackStep * kbMul));
+          streamer.pos.y = Math.max(0, Math.min(this.H, streamer.pos.y + (dy / d) * CONFIG.combat.knockbackStep * kbMul));
           // Teleport zombie to edge to avoid instant re-hit
           z.pos = this.spawnZombiePos();
         }
@@ -610,6 +762,11 @@ export class RoomDO {
             taken = true; break;
           }
           if (p.type === "weapon" && pl.role === "streamer") {
+            // If currently bat-only, grant pistol and some starter ammo; otherwise weapon boost
+            if ((pl.weapon||'bat') === 'bat') {
+              pl.weapon = 'pistol';
+              pl.pistolAmmo = Math.max(pl.pistolAmmo||0, 30);
+            }
             pl.weaponBoostUntil = now + CONFIG.effects.weaponBoostMs; // better weapon
             taken = true; break;
           }
@@ -631,10 +788,15 @@ export class RoomDO {
             for (const z of this.players.values()){
               if (z.role !== "zombie" || !z.alive) continue;
               if (Math.hypot(z.pos.x - pl.pos.x, z.pos.y - pl.pos.y) <= radius){
-                z.alive = false;
-                const id = z.id;
-                setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; } }, CONFIG.combat.respawnMs);
-                if (pl.role === "streamer") pl.score += 1;
+                z.zHp = Math.max(0, (z.zHp ?? CONFIG.zombies.baseHp) - 100);
+                if ((z.zHp ?? 0) <= 0) {
+                  z.alive = false;
+                  // Drop ammo on zombie death
+                  this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+                  const id = z.id;
+                  setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, CONFIG.combat.respawnMs);
+                  if (pl.role === "streamer") pl.score += 1;
+                }
               }
             }
             taken = true; break;
@@ -686,12 +848,13 @@ export class RoomDO {
           p.hp = p.maxHp ?? CONFIG.streamer.maxHp;
           p.weapon = "pistol";
           p.pistolAmmo = CONFIG.weapons.ammo.initial.pistol;
-          p.smgAmmo = CONFIG.weapons.ammo.initial.smg;
-          p.shotgunAmmo = CONFIG.weapons.ammo.initial.shotgun;
+          p.smgAmmo = 0;
+          p.shotgunAmmo = 0;
         } else {
           p.pos = this.spawnZombiePos();
           p.alive = true;
           p.boostUntil = undefined;
+          p.zHp = p.zMaxHp;
         }
       }
       // Let clients know a new round started
@@ -705,6 +868,7 @@ export class RoomDO {
       t: Date.now(),
       players: [...this.players.values()].map(this.publicPlayer),
       bullets: this.bullets.map(b => ({ id: b.id, x: b.pos.x, y: b.pos.y, ownerId: b.ownerId })),
+      globs: this.spittles.map(g => ({ id: g.id, x: g.pos.x, y: g.pos.y })),
       walls: this.walls.map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h })),
       pickups: this.pickups.map(pk => ({ id: pk.id, type: pk.type, x: pk.x, y: pk.y })),
       extractions: this.extractions.map(e => ({ id: e.id, x: e.x, y: e.y, r: e.r, activeUntil: e.activeUntil })),
@@ -755,6 +919,7 @@ export class RoomDO {
     dashing: (p.dashUntil || 0) > Date.now(),
     lastDashAt: p.lastDashAt || 0,
     dashReadyAt: (p.lastDashAt || 0) + CONFIG.dash.cooldownMs,
+    zClass: p.zClass || "",
   });
 
   sanitizeName(n: string) {
@@ -881,6 +1046,17 @@ export class RoomDO {
     for (const p of this.pickups){ if (Math.hypot(x-p.x,y-p.y) < minD) return false; }
     return true;
   }
+
+  pickZombieClass(): "runner" | "brute" | "spitter" {
+    const w = CONFIG.zombies.weights;
+    const bag: Array<"runner"|"brute"|"spitter"> = [];
+    for (let i=0;i<w.runner;i++) bag.push('runner');
+    for (let i=0;i<w.brute;i++) bag.push('brute');
+    for (let i=0;i<w.spitter;i++) bag.push('spitter');
+    return bag[Math.floor(Math.random()*bag.length)] || 'runner';
+  }
+
+  randRange(a:number,b:number){ return a + Math.floor(Math.random()*(b-a+1)); }
 
   // M1: Extraction helpers
   spawnExtractions() {

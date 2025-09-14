@@ -38,11 +38,15 @@
       <div class="card">
         <div class="card-title">Weapons</div>
         <div class="row">
-          <button class="weapon" data-weapon="pistol">Pistol (1)</button>
-          <button class="weapon" data-weapon="smg">SMG (2)</button>
-          <button class="weapon" data-weapon="shotgun">Shotgun (3)</button>
+          <button class="weapon" id="btnPistol" data-weapon="pistol">Pistol (1)</button>
+          <button class="weapon" id="btnSmg" data-weapon="smg">SMG (2)</button>
+          <button class="weapon" id="btnShotgun" data-weapon="shotgun">Shotgun (3)</button>
         </div>
-        <div class="tip">Right-click or Q to swing bat.</div>
+        <div class="row">
+          <button id="buyShotgun" title="Costs 300 banked" disabled>Unlock Shotgun (4) • 300</button>
+          <button id="buySmg" title="Costs 300 banked" disabled>Unlock SMG (5) • 300</button>
+        </div>
+        <div class="tip">Right‑click or Q to swing bat. Pistol is free. Unlock SMG/Shotgun with banked (300 each). Use 1/2/3 to equip, 5/4 to buy.</div>
       </div>
 
       <div class="card">
@@ -107,6 +111,11 @@
     const ammoEl = document.getElementById('ammo');
     const weaponEl = document.getElementById('weapon');
     const playersEl = document.getElementById('players');
+    const buyShotgunBtn = document.getElementById('buyShotgun');
+    const buySmgBtn = document.getElementById('buySmg');
+    const btnPistol = document.getElementById('btnPistol');
+    const btnSmg = document.getElementById('btnSmg');
+    const btnShotgun = document.getElementById('btnShotgun');
     const flashEl = document.getElementById('flash');
     const newBtn = document.getElementById('newRoom');
     const copyBtn = document.getElementById('copy');
@@ -190,6 +199,38 @@
             else if (w==='shotgun') ammo = me.shotgunAmmo ?? 0;
             else ammo = 0;
             ammoEl.textContent = ammo;
+            // Ownership inference
+            const hasSmg = (me.smgAmmo ?? 0) > 0 || w==='smg';
+            const hasShotgun = (me.shotgunAmmo ?? 0) > 0 || w==='shotgun';
+            // Button states
+            if (btnPistol) {
+              btnPistol.classList.toggle('equipped', w==='pistol');
+              btnPistol.classList.add('owned');
+            }
+            if (btnSmg) {
+              btnSmg.classList.toggle('equipped', w==='smg');
+              btnSmg.classList.toggle('owned', hasSmg);
+              btnSmg.classList.toggle('locked', !hasSmg);
+            }
+            if (btnShotgun) {
+              btnShotgun.classList.toggle('equipped', w==='shotgun');
+              btnShotgun.classList.toggle('owned', hasShotgun);
+              btnShotgun.classList.toggle('locked', !hasShotgun);
+            }
+            // Enable/disable shotgun purchase
+            if (buyShotgunBtn) {
+              const canBuy = (me.banked||0) >= 300 && !hasShotgun;
+              buyShotgunBtn.disabled = !canBuy;
+              buyShotgunBtn.textContent = 'Unlock Shotgun (4) • 300';
+              buyShotgunBtn.title = canBuy ? 'Press 4 to purchase' : 'Need 300 banked or already unlocked';
+            }
+            // Enable/disable SMG purchase
+            if (buySmgBtn) {
+              const canBuySmg = (me.banked||0) >= 300 && !hasSmg;
+              buySmgBtn.disabled = !canBuySmg;
+              buySmgBtn.textContent = 'Unlock SMG (5) • 300';
+              buySmgBtn.title = canBuySmg ? 'Press 5 to purchase' : 'Need 300 banked or already unlocked';
+            }
           }
           const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
           status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
@@ -403,6 +444,16 @@
         ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2); ctx.fill();
         ctx.restore();
       }
+      // Spitter globs (enemy projectiles)
+      if (state.globs){
+        ctx.fillStyle = '#ce93d8';
+        for (const g of state.globs){
+          ctx.save();
+          ctx.shadowColor = 'rgba(206,147,216,.6)'; ctx.shadowBlur = 8;
+          ctx.beginPath(); ctx.arc(g.x,g.y,4,0,Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
+      }
       // Bullet impact effects
       for (let i=effects.length-1;i>=0;i--){ 
         const e=effects[i]; 
@@ -478,6 +529,12 @@
         } else {
           ctx.fillStyle = p.alive? '#ef5350' : 'rgba(239,83,80,.25)';
           ctx.beginPath(); ctx.arc(sp.x,sp.y,12,0,Math.PI*2); ctx.fill();
+          // Class outline
+          if (p.zClass === 'runner') { ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 1.5; }
+          else if (p.zClass === 'brute') { ctx.strokeStyle = '#ffa726'; ctx.lineWidth = 3; }
+          else if (p.zClass === 'spitter') { ctx.strokeStyle = '#ba68c8'; ctx.lineWidth = 2; }
+          else { ctx.strokeStyle = '#e57373'; ctx.lineWidth = 1; }
+          ctx.globalAlpha = .9; ctx.beginPath(); ctx.arc(sp.x,sp.y, (p.zClass==='brute')?14:13, 0, Math.PI*2); ctx.stroke();
           if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.7; ctx.beginPath(); ctx.arc(sp.x,sp.y,16,0,Math.PI*2); ctx.stroke(); }
           ctx.globalAlpha = .95; ctx.fillStyle = '#e57373'; ctx.fillText(p.name, sp.x, sp.y - 16);
           // Emote above zombie head for 5s
@@ -627,6 +684,9 @@
       // Mini-map (bottom-right, circular)
       drawMiniMap();
 
+      // Class legend (bottom-right above minimap)
+      drawClassLegend();
+
       // Screen-space border overlay
       ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#808080'; ctx.strokeRect(1,1,rect.width-2,rect.height-2);
     }
@@ -654,7 +714,12 @@
       const mmSize = 160; const pad = 12; const cx = rect.width - pad - mmSize/2; const cy = rect.height - pad - mmSize/2;
       const R = (mmSize/2) - 4;
       const W = (state.arena && state.arena.w) || 960; const H = (state.arena && state.arena.h) || 540;
-      const scale = (2*R) / Math.max(W, H);
+      // Zoom in a bit and center around the local player if available
+      const meMM = state.players && state.players.find(p=>p.id===playerId);
+      const centerX = meMM ? meMM.x : W/2;
+      const centerY = meMM ? meMM.y : H/2;
+      const MM_ZOOM = 1.6; // >1 zooms in
+      const scale = (2*R*MM_ZOOM) / Math.max(W, H);
       // frame
       ctx.save();
       ctx.globalAlpha = 0.95;
@@ -667,7 +732,7 @@
       if (state.walls) {
         ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1;
         for (const w of state.walls){
-          const x = cx + (w.x - W/2) * scale; const y = cy + (w.y - H/2) * scale;
+          const x = cx + (w.x - centerX) * scale; const y = cy + (w.y - centerY) * scale;
           const ww = w.w * scale; const hh = w.h * scale;
           ctx.strokeRect(x, y, ww, hh);
         }
@@ -677,14 +742,14 @@
         for (const ex of state.extractions){
           const active = (ex.activeUntil||0) > Date.now();
           ctx.beginPath(); ctx.strokeStyle = active ? '#81c784' : 'rgba(129,199,132,.4)'; ctx.lineWidth = active ? 2 : 1;
-          ctx.arc(cx + (ex.x - W/2)*scale, cy + (ex.y - H/2)*scale, Math.max(1, ex.r*scale), 0, Math.PI*2);
+          ctx.arc(cx + (ex.x - centerX)*scale, cy + (ex.y - centerY)*scale, Math.max(1, ex.r*scale), 0, Math.PI*2);
           ctx.stroke();
         }
       }
       // players
       if (state.players){
         for (const p of state.players){
-          const px = cx + (p.x - W/2) * scale; const py = cy + (p.y - H/2) * scale;
+          const px = cx + (p.x - centerX) * scale; const py = cy + (p.y - centerY) * scale;
           const r = p.role==='streamer' ? 3 : 2;
           ctx.beginPath();
           ctx.fillStyle = p.role==='streamer' ? '#4caf50' : (p.alive ? '#ef5350' : 'rgba(239,83,80,.4)');
@@ -693,6 +758,30 @@
         }
       }
       ctx.restore(); // unclip
+      ctx.restore();
+    }
+
+    function drawClassLegend(){
+      const rect = c.getBoundingClientRect();
+      const pad = 12;
+      const boxW = 160, boxH = 70;
+      const x = rect.width - boxW - pad;
+      const y = rect.height - 160 - boxH - pad;
+      ctx.save();
+      ctx.globalAlpha = .95; ctx.fillStyle = 'rgba(18,20,24,.86)'; ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1.5;
+      roundRect(ctx, x, y, boxW, boxH, 10, true, true);
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif'; ctx.fillStyle = '#cfd8dc';
+      const rows = [
+        { label: 'Runner', color: '#64b5f6', lw: 1.5 },
+        { label: 'Brute', color: '#ffa726', lw: 3 },
+        { label: 'Spitter', color: '#ba68c8', lw: 2 },
+      ];
+      let yy = y + 18;
+      for (const r of rows){
+        ctx.save(); ctx.strokeStyle = r.color; ctx.lineWidth = r.lw; ctx.beginPath(); ctx.arc(x+14, yy-4, 6, 0, Math.PI*2); ctx.stroke(); ctx.restore();
+        ctx.fillText(r.label, x+28, yy-2);
+        yy += 22;
+      }
       ctx.restore();
     }
 
@@ -774,6 +863,14 @@
       if (e.key==='1') sendSwitchWeapon('pistol');
       if (e.key==='2') sendSwitchWeapon('smg');
       if (e.key==='3') sendSwitchWeapon('shotgun');
+      if (e.key==='4') {
+        // Attempt shotgun purchase
+        if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'buy', item:'shotgun' }));
+      }
+      if (e.key==='5') {
+        // Attempt SMG purchase
+        if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'buy', item:'smg' }));
+      }
       // Optional: mid-round extract attempt on X
       if (e.key==='x' || e.key==='X') {
         // Only send if inside an active extraction ring
@@ -790,9 +887,26 @@
       }
     });
     document.querySelectorAll('.weapon').forEach(btn => btn.addEventListener('click', (e) => {
-      const w = e.currentTarget && e.currentTarget.getAttribute('data-weapon');
-      if (w) sendSwitchWeapon(w);
+      const el = e.currentTarget;
+      const w = el && el.getAttribute('data-weapon');
+      if (!w) return;
+      // Guard against selecting locked weapons
+      if (el.classList.contains('locked')) {
+        try { import('/common.js').then(m => m.toast && m.toast('Locked: unlock with banked first')); } catch {}
+        return;
+      }
+      sendSwitchWeapon(w);
     }));
+    if (buyShotgunBtn) {
+      buyShotgunBtn.addEventListener('click', () => {
+        if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'buy', item:'shotgun' }));
+      });
+    }
+    if (buySmgBtn) {
+      buySmgBtn.addEventListener('click', () => {
+        if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'buy', item:'smg' }));
+      });
+    }
 
     // Fullscreen toggle
     document.getElementById('fullscreen').onclick = async () => {

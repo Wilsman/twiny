@@ -23,6 +23,16 @@ export type GameConfig = {
   effects: { weaponBoostMs: number; shieldMs: number; magnetMs: number; zombieBoostMs: number; freezeMs: number };
   extraction: { radius: number; countMin: number; countMax: number; minActiveMs: number; maxActiveMs: number };
   radii: { streamer: number; zombie: number; bulletMargin: number };
+  zombies: {
+    baseHp: number;
+    weights: { runner: number; brute: number; spitter: number };
+    speedMul: { runner: number; brute: number; spitter: number };
+    hpMul: { runner: number; brute: number; spitter: number };
+    brute: { extraKnockbackMul: number };
+    spitter: { cooldownMsMin: number; cooldownMsMax: number; manualCooldownMs: number; projectileSpeed: number; projectileTtl: number; hitDamage: number; slowMs: number; streamerSlowMul: number; range: number };
+    runnerAbility: { cooldownMs: number; durationMs: number };
+    bruteAbility: { cooldownMs: number; durationMs: number; speed: number };
+  };
 };
 
 export const CONFIG: GameConfig = {
@@ -62,4 +72,14 @@ export const CONFIG: GameConfig = {
   effects: { weaponBoostMs: 8000, shieldMs: 6000, magnetMs: 8000, zombieBoostMs: 7000, freezeMs: 6000 },
   extraction: { radius: 28, countMin: 1, countMax: 2, minActiveMs: 60_000, maxActiveMs: 90_000 },
   radii: { streamer: 10, zombie: 12, bulletMargin: 2 },
+  zombies: {
+    baseHp: 100,
+    weights: { runner: 6, brute: 2, spitter: 2 },
+    speedMul: { runner: 1.6, brute: 0.7, spitter: 1.0 },
+    hpMul: { runner: 0.6, brute: 2.5, spitter: 1.0 },
+    brute: { extraKnockbackMul: 1.4 },
+    spitter: { cooldownMsMin: 1800, cooldownMsMax: 3000, manualCooldownMs: 900, projectileSpeed: 160, projectileTtl: 1800, hitDamage: 6, slowMs: 1600, streamerSlowMul: 0.65, range: 360 },
+    runnerAbility: { cooldownMs: 1200, durationMs: 280 },
+    bruteAbility: { cooldownMs: 1600, durationMs: 320, speed: 240 },
+  },
 };

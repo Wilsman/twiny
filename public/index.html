@@ -43,6 +43,29 @@
     .card.hero-card:nth-child(2) { animation-delay: .08s; }
     .card.hero-card:nth-child(3) { animation-delay: .16s; }
     @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+    /* Modal */
+    .modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); z-index: 50; }
+    .modal.hidden { display: none; }
+    .modal .sheet { width: min(720px, 92vw); background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); border-radius: 16px; padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+    .modal .sheet .hd { display:flex; align-items:center; justify-content:space-between; font-weight:600; color: var(--text); margin-bottom: 8px; }
+    .modal .sheet .bd { color: var(--muted); }
+    .modal .sheet .ft { display:flex; gap:8px; justify-content:flex-end; margin-top: 12px; }
+    /* Down chevron at bottom of hero */
+    .down-cta {
+      position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+      width: 44px; height: 44px; border-radius: 999px;
+      display: grid; place-items: center;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.12));
+      color: var(--text);
+      box-shadow: 0 10px 28px rgba(0,0,0,.35);
+      cursor: pointer; transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
+      animation: bob 2.4s ease-in-out infinite;
+    }
+    .down-cta:hover { border-color: rgba(255,255,255,.2); box-shadow: 0 12px 34px rgba(0,0,0,.45), 0 0 0 4px rgba(158,241,209,.08); }
+    .down-cta:active { transform: translateX(-50%) translateY(1px); }
+    .down-cta svg { width: 20px; height: 20px; opacity: .9; }
+    @keyframes bob { 0%,100%{ transform: translateX(-50%) translateY(0); } 50%{ transform: translateX(-50%) translateY(4px); } }
   </style>
   <script type="module">
     // tiny confetti animation on load
@@ -61,6 +84,56 @@
       step();
       setTimeout(()=>{ el.remove(); }, 1800);
     });
+
+    // Role selection modal
+    const showRoleModal = (role) => {
+      const modal = document.getElementById('roleModal');
+      const title = document.getElementById('roleTitle');
+      const body = document.getElementById('roleBody');
+      const play = document.getElementById('rolePlay');
+      const cancel = document.getElementById('roleCancel');
+      const isStreamer = role === 'streamer';
+      title.textContent = isStreamer ? 'Play as Streamer' : 'Join as Zombie';
+      const streamerBody = `
+        <div style="line-height:1.8">
+          <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse · <strong>Shoot:</strong> Left‑click</div>
+          <div><strong>Melee (bat):</strong> Right‑click or Q/E</div>
+          <div><strong>Weapons:</strong> 1=Pistol · 2=SMG · 3=Shotgun</div>
+          <div><strong>Dash:</strong> Space (1s CD) — brief burst</div>
+          <div><strong>Extract:</strong> X inside the active ring to bank loot</div>
+          <div><strong>Scoring:</strong> Treasure adds <em>Score</em> (unbanked). Only extraction banks to <em>Banked</em>. Dying clears unbanked; banked persists.</div>
+        </div>`;
+      const zombieBody = `
+        <div style="line-height:1.8">
+          <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse · <strong>Ability:</strong> Left‑click</div>
+          <div style="margin-top:6px"><strong>Classes:</strong></div>
+          <div>• <span style=\"color:#64b5f6\">Runner</span>: Sprint burst on click (1.6× speed, 0.6× HP)</div>
+          <div>• <span style=\"color:#ffa726\">Brute</span>: Charge toward cursor on click (0.7× speed, 2× HP, strong knockback)</div>
+          <div>• <span style=\"color:#ba68c8\">Spitter</span>: Spit slow glob on click (damage + slow); also auto‑spits in range</div>
+          <div style=\"margin-top:6px\">Touch the streamer to deal damage; coordinate to deny extraction.</div>
+        </div>`;
+      body.innerHTML = isStreamer ? streamerBody : zombieBody;
+      play.onclick = () => { window.location.href = isStreamer ? '/streamer.html' : '/join.html'; };
+      cancel.onclick = () => { modal.classList.add('hidden'); };
+      modal.classList.remove('hidden');
+    };
+
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.matches('#ctaStreamer')) { e.preventDefault(); showRoleModal('streamer'); }
+      if (t.matches('#ctaZombie')) { e.preventDefault(); showRoleModal('zombie'); }
+    });
+
+    // Smooth scroll to How To Play
+    const scrollBtn = document.getElementById('scrollDown');
+    const howto = document.getElementById('howto');
+    if (scrollBtn && howto) {
+      scrollBtn.addEventListener('click', () => {
+        try { howto.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        catch { window.scrollTo({ top: howto.getBoundingClientRect().top + window.scrollY - 12, behavior: 'smooth' }); }
+      });
+    }
   </script>
 </head>
 <body>
@@ -70,8 +143,8 @@
       <span class="badge" id="status" data-state="disconnected">Welcome</span>
     </div>
     <div class="right-controls">
-      <a href="/streamer.html"><button class="primary">Streamer</button></a>
-      <a href="/join.html"><button>Join</button></a>
+      <button class="primary" id="ctaStreamer">Streamer</button>
+      <button id="ctaZombie">Join</button>
     </div>
   </div>
   <div class="hero">
@@ -82,17 +155,77 @@
       <div class="title">Streamer vs. Chat — Zombies</div>
       <div class="subtitle">A fast, top‑down extraction arena: One streamer, many zombies. Bank loot, survive the horde, and extract before time runs out.</div>
       <div class="cta">
-        <a href="/streamer.html"><button class="btn-xl primary">Play as Streamer</button></a>
-        <a href="/join.html"><button class="btn-xl secondary">Join as Zombie</button></a>
+        <button class="btn-xl primary" id="ctaStreamer">Play as Streamer</button>
+        <button class="btn-xl secondary" id="ctaZombie">Join as Zombie</button>
+      </div>
+    </div>
+    <button id="scrollDown" class="down-cta" aria-label="Scroll to How To Play">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="cards">
+      <div class="card hero-card"><div class="card-title">20Hz Server</div><div class="tip">Authoritative sim with fair hits and clean rollback for inputs.</div></div>
+      <div class="card hero-card"><div class="card-title">Tarkov Tension</div><div class="tip">Loot treasure to raise your score, but only extraction banks it.</div></div>
+      <div class="card hero-card"><div class="card-title">Chat vs. You</div><div class="tip">Hundreds of slow zombies, simple inputs, and satisfying chaos.</div></div>
+    </div>
+  </div>
+
+  <div id="howto" class="cards" style="max-width:1100px; margin:0 auto 60px;">
+    <div class="card hero-card">
+      <div class="card-title">How To Play — Streamer</div>
+      <div class="tip" style="line-height:1.7">
+        <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse · <strong>Shoot:</strong> Left‑click</div>
+        <div><strong>Melee (bat):</strong> Right‑click or Q/E · short arc</div>
+        <div><strong>Weapons:</strong> 1=Pistol · 2=SMG · 3=Shotgun</div>
+        <div><strong>Dash:</strong> Space (1s CD) · brief burst</div>
+        <div><strong>Extract:</strong> X inside the active ring to bank loot</div>
+        <div><strong>Scoring:</strong> Treasure adds <em>Score</em> (unbanked). Only extraction moves it to <em>Banked</em>. Dying clears unbanked, banked persists.</div>
+      </div>
+    </div>
+    <div class="card hero-card">
+      <div class="card-title">How To Play — Zombie</div>
+      <div class="tip" style="line-height:1.7">
+        <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse</div>
+        <div><strong>Ability (all classes):</strong> Left‑click</div>
+        <div style="margin-top:6px"><strong>Classes:</strong></div>
+        <div>• <span style="color:#64b5f6">Runner</span>: 1.6× speed, 0.6× HP. Left‑click = short sprint burst.</div>
+        <div>• <span style="color:#ffa726">Brute</span>: 0.7× speed, 2× HP. Left‑click = charge toward cursor (strong knockback on hit).</div>
+        <div>• <span style="color:#ba68c8">Spitter</span>: normal speed/HP. Left‑click = spit a slow purple glob (damage + slow). Also spits automatically in range.</div>
+        <div style="margin-top:6px">Touching the streamer deals damage; team up to deny extraction.</div>
       </div>
     </div>
   </div>
 
-  <div class="cards">
-    <div class="card hero-card"><div class="card-title">20Hz Server</div><div class="tip">Authoritative sim with fair hits and clean rollback for inputs.</div></div>
-    <div class="card hero-card"><div class="card-title">Tarkov Tension</div><div class="tip">Loot treasure to raise your score, but only extraction banks it.</div></div>
-    <div class="card hero-card"><div class="card-title">Chat vs. You</div><div class="tip">Hundreds of slow zombies, simple inputs, and satisfying chaos.</div></div>
+  <div class="cards" style="max-width:1100px; margin:0 auto 80px; grid-template-columns: 1fr;">
+    <div class="card hero-card">
+      <div class="card-title">Legend & Tips</div>
+      <div class="tip" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+        <div>
+          <div style="margin-bottom:8px"><strong>Extraction:</strong> Green ring on the map; rotates periodically. Be inside to bank at round end, or press X as streamer.</div>
+          <div><strong>Minimap:</strong> Bottom‑right, zoomed to your position.</div>
+        </div>
+        <div>
+          <div style="margin-bottom:4px"><strong>Zombie Class Rings:</strong></div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px"><span style="width:12px;height:12px;border-radius:999px;border:2px solid #64b5f6;display:inline-block"></span> Runner</div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px"><span style="width:12px;height:12px;border-radius:999px;border:3px solid #ffa726;display:inline-block"></span> Brute</div>
+          <div style="display:flex; align-items:center; gap:8px"><span style="width:12px;height:12px;border-radius:999px;border:2px solid #ba68c8;display:inline-block"></span> Spitter</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Role selection modal -->
+  <div id="roleModal" class="modal hidden">
+    <div class="sheet">
+      <div class="hd"><span id="roleTitle">Play</span></div>
+      <div class="bd" id="roleBody"></div>
+      <div class="ft">
+        <button id="roleCancel">Back</button>
+        <button id="rolePlay" class="primary">Play</button>
+      </div>
+    </div>
   </div>
 </body>
 </html>
-
