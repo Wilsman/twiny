@@ -229,7 +229,7 @@ export function createLatencyMonitor(ws) {
 }
 
 // Minimal toast helper
-export function toast(msg, ms=1200) {
+export function toast(msg, ms=5000) { // time = 5000ms = 5s
   let t = document.querySelector('.toast');
   if (!t) { t = document.createElement('div'); t.className='toast'; document.body.appendChild(t); }
   t.textContent = msg; t.classList.add('show');

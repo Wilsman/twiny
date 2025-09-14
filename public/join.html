@@ -72,6 +72,7 @@
     suppressPageHotkeys();
     let ws, playerId, arena={w:960,h:540};
     let state = { players:[], bullets:[], arena, remainingTime: 0 };
+    let gameMap = null; // {w,h,size,theme,tiles:Uint8Array, props, lights}
     const input = inputController({ mouse:true });
     const effects = [];
     // Smoothing for 20Hz -> 60fps render
@@ -207,6 +208,13 @@
       pingIv = setInterval(() => { try { latency.sendPing(); } catch {} }, 1000);
       ws.addEventListener('message', (ev) => {
         const msg = JSON.parse(ev.data);
+        if (msg.type === 'map') {
+          try {
+            const m = msg.map; const bin = atob(m.tilesBase64);
+            const u8 = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) u8[i] = bin.charCodeAt(i);
+            gameMap = { w:m.w, h:m.h, size:m.size, theme:m.theme, tiles:u8, props:m.props||[], lights:m.lights||[] };
+          } catch {}
+        }
         if (msg.type === 'joined') { arena = msg.arena; playerId = msg.playerId; }
         if (msg.type === 'state') {
           stateMsgCount++;
@@ -277,7 +285,7 @@
       ctx.clearRect(0,0,c.width,c.height);
       ctx.setTransform(dpr,0,0,dpr,0,0);
       // Fill background
-      ctx.fillStyle = '#000000';
+      ctx.fillStyle = '#0C0C0C';
       ctx.fillRect(0,0, rect.width, rect.height);
       // Update camera target (follow me)
       let meRaw = state.players.find(p=>p.id===playerId);
@@ -298,6 +306,8 @@
       ctx.save();
       ctx.scale(zoom, zoom);
       ctx.translate(-camX, -camY);
+      // Tiles first
+      if (gameMap) drawTiles(camX, camY, rect.width/zoom, rect.height/zoom);
       // Walls/rooms
       if (state.walls){
         ctx.fillStyle = '#FFFFFF';
@@ -372,7 +382,7 @@
           ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
           ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(pk.x, pk.y, 3, 0, Math.PI*2); ctx.fill(); ctx.restore();
           ctx.fillStyle = '#cfd8dc'; ctx.globalAlpha = 0.95;
-          const labelMap = { health:'HEALTH', speed:'SPEED', ammo:'AMMO', weapon:'WEAPON', shield:'SHIELD', magnet:'MAGNET', freeze:'FREEZE', blast:'BLAST', treasure:'TREASURE' };
+          const labelMap = { health:'HEALTH', speed:'SPEED', ammo:'AMMO', weapon:'WEAPON', shield:'SHIELD', magnet:'MAGNET', freeze:'FREEZE', blast:'BLAST', treasure:'TREASURE', key:'KEY' };
           const lbl = labelMap[pk.type] || String(pk.type).toUpperCase();
           if (lbl) ctx.fillText(lbl, pk.x, pk.y + 14);
           ctx.restore();
@@ -587,6 +597,61 @@
         }
       }
       ctx.restore(); ctx.restore();
+    }
+
+    function drawTiles(viewX, viewY, viewW, viewH){
+      const m = gameMap; if (!m) return; const sz = m.size;
+      const theme = m.theme||'dungeon';
+      const pal = theme==='dungeon' ? {
+        floor:'#0e1115', wall:'#2a2f36', pit:'#0b0d11', water:'#0d1b2a', edge:'#9aa4b2', propCrate:'#6d4c41', propPillar:'#b0bec5', propBone:'#8d6e63'
+      } : theme==='cave' ? {
+        floor:'#0d1113', wall:'#263238', pit:'#0a0e10', water:'#0b1f2d', edge:'#90a4ae', propCrate:'#546e7a', propPillar:'#90caf9', propBone:'#80cbc4'
+      } : {
+        floor:'#111416', wall:'#3c4148', pit:'#0b0c0d', water:'#14212e', edge:'#b0bec5', propCrate:'#90a4ae', propPillar:'#cfd8dc', propBone:'#b0bec5'
+      };
+      const sx = Math.max(0, Math.floor(viewX/sz)-1), sy = Math.max(0, Math.floor(viewY/sz)-1);
+      const ex = Math.min(m.w-1, Math.ceil((viewX+viewW)/sz)+1), ey = Math.min(m.h-1, Math.ceil((viewY+viewH)/sz)+1);
+      // Floor
+      for (let y=sy;y<=ey;y++){
+        for (let x=sx;x<=ex;x++){
+          const id = m.tiles[y*m.w + x];
+          if (id===0){ ctx.fillStyle = pal.floor; ctx.fillRect(x*sz, y*sz, sz, sz); ctx.globalAlpha=.06; ctx.fillStyle='#ffffff'; ctx.fillRect(x*sz+4,y*sz+4,3,3); ctx.globalAlpha=1; }
+        }
+      }
+      // Pits/Water
+      for (let y=sy;y<=ey;y++) for (let x=sx;x<=ex;x++){ const id=m.tiles[y*m.w+x]; if (id===2){ ctx.fillStyle='#101318'; ctx.fillRect(x*sz,y*sz,sz,sz);} if (id===3){ ctx.fillStyle='#0d1b2a'; ctx.fillRect(x*sz,y*sz,sz,sz);} }
+      // Walls outline
+      const isWall=(ix,iy)=> ix>=0&&iy>=0&&ix<m.w&&iy<m.h && m.tiles[iy*m.w+ix]===1;
+      ctx.fillStyle = pal.wall;
+      for (let y=sy;y<=ey;y++){
+        for (let x=sx;x<=ex;x++){
+          if (!isWall(x,y)) continue; const px=x*sz, py=y*sz; ctx.fillRect(px,py,sz,sz);
+          ctx.strokeStyle=pal.edge; ctx.lineWidth=1; ctx.globalAlpha=.15;
+          if (!isWall(x,y-1)){ ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px+sz,py); ctx.stroke(); }
+          if (!isWall(x+1,y)){ ctx.beginPath(); ctx.moveTo(px+sz,py); ctx.lineTo(px+sz,py+sz); ctx.stroke(); }
+          if (!isWall(x,y+1)){ ctx.beginPath(); ctx.moveTo(px,py+sz); ctx.lineTo(px+sz,py+sz); ctx.stroke(); }
+          if (!isWall(x-1,y)){ ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px,py+sz); ctx.stroke(); }
+          ctx.globalAlpha=1;
+        }
+      }
+      // Props
+      for (const p of (m.props||[])){
+        const px=p.x*sz, py=p.y*sz; ctx.save(); ctx.globalAlpha=.9; ctx.fillStyle=p.type==='crate'?pal.propCrate:p.type==='pillar'?pal.propPillar:pal.propBone; ctx.fillRect(px+4,py+4,sz-8,sz-8); ctx.restore();
+      }
+      // Lights
+      for (const l of (m.lights||[])){
+        const cx=l.x*sz+sz/2, cy=l.y*sz+sz/2, rr=l.r*sz; const g=ctx.createRadialGradient(cx,cy,2,cx,cy,rr); g.addColorStop(0,`rgba(255,255,200,${0.35*l.a})`); g.addColorStop(1,'rgba(255,255,200,0)'); ctx.save(); ctx.fillStyle=g; ctx.fillRect(cx-rr,cy-rr,rr*2,rr*2); ctx.restore();
+      }
+    }
+
+    // Simple lighting overlay for zombies — lighter than streamer
+    function drawLighting(viewX, viewY, viewW, viewH, me){
+      ctx.save(); ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(viewX,viewY,viewW,viewH); ctx.globalCompositeOperation='destination-out';
+      const add=(x,y,r,a=1)=>{ const g=ctx.createRadialGradient(x,y,2,x,y,r); g.addColorStop(0,`rgba(255,255,220,${0.6*a})`); g.addColorStop(1,'rgba(255,255,220,0)'); ctx.fillStyle=g; ctx.fillRect(x-r,y-r,r*2,r*2); };
+      if (gameMap){ const sz=gameMap.size; for(const l of (gameMap.lights||[])) add(l.x*sz+sz/2,l.y*sz+sz/2,(l.r||6)*sz,l.a||0.2); }
+      if (me) add(me.x, me.y, 110, 1);
+      for (const b of (state.bullets||[])) add(b.x,b.y,22,.6);
+      ctx.restore();
     }
 
     function drawClassLegend(){

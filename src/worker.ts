@@ -22,6 +22,13 @@ export default {
   async fetch(req: Request, env: Env) {
     const url = new URL(req.url);
 
+    // Return current default config (for UI/editor)
+    if (url.pathname === "/config" && req.method === "GET") {
+      // Lazy import to avoid side-effects on module load
+      const { CONFIG } = await import("./config");
+      return new Response(JSON.stringify(CONFIG), { headers: { "content-type": "application/json" } });
+    }
+
     // WebSocket upgrade routed to the Room Durable Object
     if (url.pathname.startsWith("/ws/") && req.headers.get("Upgrade") === "websocket") {
       const roomId = url.pathname.split("/").pop()!;
@@ -32,8 +39,30 @@ export default {
 
     // Mint a new room id with regional hint
     if (url.pathname === "/create" && req.method === "POST") {
+      let overrides: any = undefined;
+      try {
+        const ct = req.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const body = await req.json().catch(() => ({}));
+          if (body && typeof body === 'object') overrides = body.overrides || body.config || undefined;
+        }
+      } catch {}
+
       const region = getRegionFromRequest(req);
       const roomId = `${region}-${crypto.randomUUID().slice(0, 6)}`;
+
+      // If overrides provided, initialize the DO instance with them before returning
+      if (overrides && typeof overrides === 'object') {
+        try {
+          const id = env.ROOMS.idFromName(roomId);
+          const stub = env.ROOMS.get(id);
+          await stub.fetch(new Request(`https://do/${roomId}/setup`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ overrides })
+          }));
+        } catch {}
+      }
       return new Response(JSON.stringify({ roomId }), { headers: { "content-type": "application/json" } });
     }
 

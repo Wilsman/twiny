@@ -86,7 +86,7 @@
     });
 
     // Role selection modal
-    const showRoleModal = (role) => {
+    const showRoleModal = async (role) => {
       const modal = document.getElementById('roleModal');
       const title = document.getElementById('roleTitle');
       const body = document.getElementById('roleBody');
@@ -94,6 +94,7 @@
       const cancel = document.getElementById('roleCancel');
       const isStreamer = role === 'streamer';
       title.textContent = isStreamer ? 'Play as Streamer' : 'Join as Zombie';
+      // Streamer body with inline advanced config editor
       const streamerBody = `
         <div style="line-height:1.8">
           <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse · <strong>Shoot:</strong> Left‑click</div>
@@ -102,7 +103,14 @@
           <div><strong>Dash:</strong> Space (1s CD) — brief burst</div>
           <div><strong>Extract:</strong> X inside the active ring to bank loot</div>
           <div><strong>Scoring:</strong> Treasure adds <em>Score</em> (unbanked). Only extraction banks to <em>Banked</em>. Dying clears unbanked; banked persists.</div>
-        </div>`;
+        </div>
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer">Advanced: Edit Room Config (JSON)</summary>
+          <div class="row" style="margin-top:8px">
+            <textarea id="configEditor" class="mono" style="width:100%; height:220px"></textarea>
+          </div>
+          <div class="tip">Edit only what you need. Invalid JSON will be ignored.</div>
+        </details>`;
       const zombieBody = `
         <div style="line-height:1.8">
           <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse · <strong>Ability:</strong> Left‑click</div>
@@ -113,7 +121,36 @@
           <div style=\"margin-top:6px\">Touch the streamer to deal damage; coordinate to deny extraction.</div>
         </div>`;
       body.innerHTML = isStreamer ? streamerBody : zombieBody;
-      play.onclick = () => { window.location.href = isStreamer ? '/streamer.html' : '/join.html'; };
+      // Preload default config JSON if streamer
+      if (isStreamer) {
+        try {
+          const res = await fetch('/config');
+          if (res.ok) {
+            const cfg = await res.json();
+            const ed = document.getElementById('configEditor');
+            if (ed) ed.value = JSON.stringify(cfg, null, 2);
+          }
+        } catch {}
+      }
+      play.onclick = async () => {
+        if (isStreamer) {
+          // Create room with optional overrides
+          let overrides = undefined;
+          const ed = document.getElementById('configEditor');
+          if (ed && ed.value.trim()) {
+            try { overrides = JSON.parse(ed.value); } catch { overrides = undefined; }
+          }
+          try {
+            const res = await fetch('/create', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ overrides }) });
+            const data = await res.json();
+            if (data && data.roomId) { window.location.href = `/streamer.html?room=${encodeURIComponent(data.roomId)}`; return; }
+          } catch {}
+          // Fallback
+          window.location.href = '/streamer.html';
+        } else {
+          window.location.href = '/join.html';
+        }
+      };
       cancel.onclick = () => { modal.classList.add('hidden'); };
       modal.classList.remove('hidden');
     };
