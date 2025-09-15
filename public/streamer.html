@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Arena Shooter â€” Streamer</title>
+    <title>Arena Shooter Streamer</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="game">
@@ -22,7 +22,42 @@
 
     <div class="app">
       <div class="main">
-        <div class="stage"></div>
+        <div class="stage">
+          <div class="hud-layer">
+            <div class="hud-stack hud-top-right">
+              <div id="upgradeOverlay" class="hud-panel hidden">
+                <div class="hud-panel-title mono">Level Up! Choose an upgrade</div>
+                <div class="choices">
+                  <button class="choice" data-idx="0"></button>
+                  <button class="choice" data-idx="1"></button>
+                  <button class="choice" data-idx="2"></button>
+                </div>
+                <div class="tip mono">Press 1 / 2 / 3</div>
+              </div>
+              <div id="buffPanel" class="hud-panel hidden">
+                <div class="hud-panel-title">Current Upgrades</div>
+                <div class="hud-buff-list" id="buffList"></div>
+              </div>
+              <div class="hud-pill hud-pill--right">
+                <span>Score: <strong id="hudScore">0</strong></span>
+                <span>Banked: <strong id="hudBanked">0</strong></span>
+              </div>
+            </div>
+            <div class="hud-stack hud-top-left">
+              <div class="hud-pill">
+                <span>HP: <strong id="hudHp">0/0</strong></span>
+                <span>Level: <strong id="hudLevel">0</strong></span>
+                <span>XP: <strong id="hudXp">0/0</strong></span>
+              </div>
+            </div>
+            <div class="hud-stack hud-bottom-left">
+              <div class="hud-pill">
+                <span>Weapon: <strong id="hudWeapon">--</strong></span>
+                <span>Ammo: <strong id="hudAmmo">0</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <aside class="sidebar">
         <div class="card">
@@ -167,11 +202,82 @@
       const chatInput = document.getElementById("chatInput");
       const toggleChatBtn = document.getElementById("toggleChat");
       const nerdToggleBtn = document.getElementById("nerdToggle");
+      const buffPanel = document.getElementById("buffPanel");
+      const buffListEl = document.getElementById("buffList");
+      const hudScoreEl = document.getElementById("hudScore");
+      const hudBankedEl = document.getElementById("hudBanked");
+      const hudWeaponEl = document.getElementById("hudWeapon");
+      const hudAmmoEl = document.getElementById("hudAmmo");
+      const hudHpEl = document.getElementById("hudHp");
+      const hudLevelEl = document.getElementById("hudLevel");
+      const hudXpEl = document.getElementById("hudXp");
       // Nerd panel overlay element
       const nerdPanel = document.createElement("div");
       nerdPanel.id = "nerdPanel";
       nerdPanel.className = "nerd-panel hidden mono";
       document.body.appendChild(nerdPanel);
+
+      // Upgrade overlay elements
+      const overlay = document.getElementById('upgradeOverlay');
+      const choiceEls = Array.from(overlay.querySelectorAll('.choice'));
+      let currentChoices = [];
+      function showUpgrades(choices){
+        currentChoices = choices || [];
+        choiceEls.forEach((el, i) => {
+          const c = currentChoices[i];
+          if (!c) { el.textContent = ''; el.disabled = true; return; }
+          el.disabled = false;
+          el.textContent = `${i+1}) ${c.name} - ${c.desc}`;
+        });
+        overlay.classList.remove('hidden');
+      }
+      function pickUpgrade(index){
+        const c = currentChoices[index];
+        if (!c || !ws) return;
+        try { ws.send(JSON.stringify({ type:'choose_upgrade', id: c.id })); } catch {}
+        overlay.classList.add('hidden');
+        currentChoices = [];
+      }
+      choiceEls.forEach((el,i)=> el.addEventListener('click', ()=> pickUpgrade(i)) );
+      window.addEventListener('keydown', (e)=>{
+        if (overlay.classList.contains('hidden')) return;
+        if (e.key === '1') pickUpgrade(0);
+        if (e.key === '2') pickUpgrade(1);
+        if (e.key === '3') pickUpgrade(2);
+      });
+
+      function xpThreshold(level) {
+        return 3 + Math.floor(level * 1.8);
+      }
+
+      function renderBuffs(mods) {
+        if (!buffListEl) return;
+        buffListEl.innerHTML = "";
+        const data = Array.isArray(mods)
+          ? mods.slice()
+          : Object.entries(mods || {}).map(([id, stacks]) => ({ id, stacks }));
+        if (!data.length) {
+          if (buffPanel) buffPanel.classList.add('hidden');
+          return;
+        }
+        data.sort((a, b) => (a.name || a.id || '').localeCompare(b.name || b.id || ''));
+        if (buffPanel) buffPanel.classList.remove('hidden');
+        for (const mod of data) {
+          const row = document.createElement('div');
+          row.className = 'hud-buff';
+          row.dataset.rarity = (mod.rarity || 'common');
+          if (mod.desc) row.title = mod.desc;
+          const nameEl = document.createElement('span');
+          nameEl.className = 'label';
+          nameEl.textContent = mod.name || mod.id;
+          const stackEl = document.createElement('span');
+          stackEl.className = 'stacks';
+          stackEl.textContent = `x${mod.stacks ?? 1}`;
+          row.append(nameEl, stackEl);
+          buffListEl.appendChild(row);
+        }
+      }
+      renderBuffs([]);
 
       let nerdOn = localStorage.getItem("nerdStats") === "1";
       function setNerd(on) {
@@ -275,9 +381,14 @@
             state = msg;
             const me = msg.players.find((p) => p.id === playerId);
             if (me) {
+              const hpVal = me.hp ?? 0;
+              const maxHp = me.maxHp ?? hpVal;
+              const level = me.level ?? 0;
+              const xpVal = me.xp ?? 0;
+              const xpNeed = me.xpForNext ?? xpThreshold(level);
               scoreEl.textContent = me.score;
               bankedEl.textContent = me.banked ?? 0;
-              hpEl.textContent = me.hp ?? 0;
+              hpEl.textContent = `${hpVal}/${maxHp}`;
               const w = me.weapon || "pistol";
               weaponEl.textContent = w;
               let ammo = 0;
@@ -286,6 +397,14 @@
               else if (w === "shotgun") ammo = me.shotgunAmmo ?? 0;
               else ammo = 0;
               ammoEl.textContent = ammo;
+              if (hudScoreEl) hudScoreEl.textContent = String(me.score ?? 0);
+              if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
+              if (hudWeaponEl) hudWeaponEl.textContent = w;
+              if (hudAmmoEl) hudAmmoEl.textContent = String(ammo);
+              if (hudHpEl) hudHpEl.textContent = `${hpVal}/${maxHp}`;
+              if (hudLevelEl) hudLevelEl.textContent = String(level);
+              if (hudXpEl) hudXpEl.textContent = `${xpVal}/${xpNeed}`;
+              renderBuffs(me.mods || []);
               // Ownership inference
               const hasSmg = (me.smgAmmo ?? 0) > 0 || w === "smg";
               const hasShotgun = (me.shotgunAmmo ?? 0) > 0 || w === "shotgun";
@@ -304,24 +423,31 @@
                 btnShotgun.classList.toggle("owned", hasShotgun);
                 btnShotgun.classList.toggle("locked", !hasShotgun);
               }
-              // Enable/disable shotgun purchase
               if (buyShotgunBtn) {
                 const canBuy = (me.banked || 0) >= 300 && !hasShotgun;
                 buyShotgunBtn.disabled = !canBuy;
-                buyShotgunBtn.textContent = "Unlock Shotgun (4) • 300";
+                buyShotgunBtn.textContent = "Unlock Shotgun (4) ??? 300";
                 buyShotgunBtn.title = canBuy
                   ? "Press 4 to purchase"
                   : "Need 300 banked or already unlocked";
               }
-              // Enable/disable SMG purchase
               if (buySmgBtn) {
                 const canBuySmg = (me.banked || 0) >= 300 && !hasSmg;
                 buySmgBtn.disabled = !canBuySmg;
-                buySmgBtn.textContent = "Unlock SMG (5) • 300";
+                buySmgBtn.textContent = "Unlock SMG (5) ??? 300";
                 buySmgBtn.title = canBuySmg
                   ? "Press 5 to purchase"
                   : "Need 300 banked or already unlocked";
               }
+            } else {
+              renderBuffs([]);
+              if (hudScoreEl) hudScoreEl.textContent = '0';
+              if (hudBankedEl) hudBankedEl.textContent = '0';
+              if (hudWeaponEl) hudWeaponEl.textContent = '--';
+              if (hudAmmoEl) hudAmmoEl.textContent = '0';
+              if (hudHpEl) hudHpEl.textContent = '0/0';
+              if (hudLevelEl) hudLevelEl.textContent = '0';
+              if (hudXpEl) hudXpEl.textContent = '0/0';
             }
             const ping = Math.max(0, Date.now() - (msg.t || Date.now()));
             status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
@@ -361,6 +487,9 @@
               toast(msg.message);
             } catch {}
             appendChat("System", msg.message);
+          }
+          if (msg.type === 'upgrade_offer') {
+            showUpgrades(msg.choices || []);
           }
         });
         inputIv = setInterval(() => {
@@ -507,6 +636,7 @@
         ctx.fillRect(0, 0, rect.width, rect.height);
         // Update camera target (follow player with slight mouse bias)
         const meRawForCam = state.players.find((p) => p.id === playerId);
+        const meHud = meRawForCam || null;
         const meCam = meRawForCam
           ? getSmoothedPos(meRawForCam.id, meRawForCam.x, meRawForCam.y, dt)
           : null;
@@ -551,45 +681,7 @@
             ctx.fillRect(w.x, w.y, w.w, w.h);
           }
         }
-        // Extractions
-        if (state.extractions) {
-          for (const ex of state.extractions) {
-            const nowMs = performance.now();
-            const active = (ex.activeUntil || 0) > Date.now();
-            const pulse = active
-              ? 0.6 + 0.4 * Math.abs(Math.sin(nowMs / 350))
-              : 0.25;
-            const timeLeft = active
-              ? Math.max(
-                  0,
-                  Math.ceil(((ex.activeUntil || 0) - Date.now()) / 1000)
-                )
-              : 0;
-            ctx.save();
-            ctx.lineWidth = active ? 3 : 2;
-            ctx.globalAlpha = pulse;
-            ctx.strokeStyle = "#81c784";
-            ctx.beginPath();
-            ctx.arc(ex.x, ex.y, ex.r, 0, Math.PI * 2);
-            ctx.stroke();
-            // subtle outer pulse ring when active
-            if (active) {
-              ctx.globalAlpha = Math.max(0, pulse * 0.35);
-              ctx.beginPath();
-              ctx.arc(ex.x, ex.y, ex.r + 6, 0, Math.PI * 2);
-              ctx.stroke();
-            }
-            // label and timer
-            ctx.globalAlpha = active ? 0.95 : 0.35;
-            ctx.fillStyle = "#c8e6c9";
-            ctx.font =
-              "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-            ctx.textAlign = "center";
-            const label = active ? `EXTRACT ${timeLeft}s` : "EXTRACT";
-            ctx.fillText(label, ex.x, ex.y - ex.r - 6);
-            ctx.restore();
-          }
-        }
+        // Extractions removed
         // Pickups
         if (state.pickups) {
           for (const pk of state.pickups) {
@@ -1197,50 +1289,6 @@
         drawLighting(camX, camY, rect.width / zoom, rect.height / zoom);
         ctx.restore();
 
-        // In-game HUD (top-right): Extract time, Score, Ammo
-        const meHud = state.players.find((p) => p.id === playerId);
-        const activeEx = (state.extractions || []).find(
-          (ex) => (ex.activeUntil || 0) > Date.now()
-        );
-        const extractLeft = activeEx
-          ? Math.max(
-              0,
-              Math.ceil(((activeEx.activeUntil || 0) - Date.now()) / 1000)
-            )
-          : 0;
-        const weapon = (meHud && (meHud.weapon || "pistol")) || "pistol";
-        let ammo = 0;
-        if (meHud) {
-          if (weapon === "pistol") ammo = meHud.pistolAmmo || 0;
-          else if (weapon === "smg") ammo = meHud.smgAmmo || 0;
-          else if (weapon === "shotgun") ammo = meHud.shotgunAmmo || 0;
-        }
-        const hudLines = [
-          `Extract: ${activeEx ? extractLeft + "s" : "—"}`,
-          `Score: ${meHud ? meHud.score : 0}  Banked: ${
-            meHud ? meHud.banked : 0
-          }`,
-        ];
-        const pad = 8;
-        const lineH = 16;
-        const boxW = 220;
-        const boxH = pad * 2 + hudLines.length * lineH;
-        const x0 = rect.width - boxW - 12;
-        const y0 = 12;
-        ctx.save();
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = "rgba(18,20,24,.86)";
-        ctx.strokeStyle = "rgba(255,255,255,.08)";
-        ctx.lineWidth = 1.5;
-        roundRect(ctx, x0, y0, boxW, boxH, 10, true, true);
-        ctx.fillStyle = "#cfd8dc";
-        ctx.font =
-          "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-        for (let i = 0; i < hudLines.length; i++) {
-          ctx.fillText(hudLines[i], x0 + 10, y0 + pad + (i + 1) * lineH - 4);
-        }
-        ctx.restore();
-
         // Dash cooldown indicator (bottom-center) — doubled size
         if (meHud) {
           const readyAt = meHud.dashReadyAt || 0;
@@ -1287,35 +1335,9 @@
           ctx.restore();
         }
 
-        // Weapon/Ammo (bottom-left) — doubled size
-        if (meHud) {
-          const padBL = 12;
-          const boxW2 = 340,
-            boxH2 = 80;
-          const xBL = padBL,
-            yBL = rect.height - boxH2 - padBL;
-          ctx.save();
-          ctx.globalAlpha = 0.95;
-          ctx.fillStyle = "rgba(18,20,24,.86)";
-          ctx.strokeStyle = "rgba(255,255,255,.08)";
-          ctx.lineWidth = 2;
-          roundRect(ctx, xBL, yBL, boxW2, boxH2, 24, true, true);
-          ctx.fillStyle = "#cfd8dc";
-          ctx.font =
-            "20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-          ctx.fillText(`Weapon: ${weapon}`, xBL + 20, yBL + 32);
-          ctx.fillText(`Ammo: ${ammo}`, xBL + 20, yBL + 64);
-          ctx.restore();
-        }
-
         // Mini-map (bottom-right, circular)
         drawMiniMap();
 
-        // Class legend (bottom-right above minimap)
-        drawClassLegend();
-
-        // AI Zombie legend (top-left)
-        drawAIZombieLegend();
 
         // Screen-space border overlay
         ctx.globalAlpha = 1;
@@ -1385,23 +1407,7 @@
             ctx.strokeRect(x, y, ww, hh);
           }
         }
-        // extractions
-        if (state.extractions) {
-          for (const ex of state.extractions) {
-            const active = (ex.activeUntil || 0) > Date.now();
-            ctx.beginPath();
-            ctx.strokeStyle = active ? "#81c784" : "rgba(129,199,132,.4)";
-            ctx.lineWidth = active ? 2 : 1;
-            ctx.arc(
-              cx + (ex.x - centerX) * scale,
-              cy + (ex.y - centerY) * scale,
-              Math.max(1, ex.r * scale),
-              0,
-              Math.PI * 2
-            );
-            ctx.stroke();
-          }
-        }
+        // extractions removed
         // players
         if (state.players) {
           for (const p of state.players) {
@@ -1588,84 +1594,11 @@
           ctx.restore();
         }
       }
-
-      function drawClassLegend() {
-        const rect = c.getBoundingClientRect();
-        const pad = 12;
-        const boxW = 160,
-          boxH = 70;
-        const x = rect.width - boxW - pad;
-        const y = rect.height - 160 - boxH - pad;
-        ctx.save();
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = "rgba(18,20,24,.86)";
-        ctx.strokeStyle = "rgba(255,255,255,.08)";
-        ctx.lineWidth = 1.5;
-        roundRect(ctx, x, y, boxW, boxH, 10, true, true);
-        ctx.font =
-          "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-        ctx.fillStyle = "#cfd8dc";
-        const rows = [
-          { label: "Runner", color: "#64b5f6", lw: 1.5 },
-          { label: "Brute", color: "#ffa726", lw: 3 },
-          { label: "Spitter", color: "#ba68c8", lw: 2 },
-        ];
-        let yy = y + 18;
-        for (const r of rows) {
-          ctx.save();
-          ctx.strokeStyle = r.color;
-          ctx.lineWidth = r.lw;
-          ctx.beginPath();
-          ctx.arc(x + 14, yy - 4, 6, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-          ctx.fillText(r.label, x + 28, yy - 2);
-          yy += 22;
-        }
         ctx.restore();
-      }
-
-      function drawAIZombieLegend() {
-        const rect = c.getBoundingClientRect();
-        const pad = 12;
-        const boxW = 180,
-          boxH = 90;
-        const x = pad;
-        const y = pad + 60; // Below the HUD
-        ctx.save();
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = "rgba(18,20,24,.86)";
-        ctx.strokeStyle = "rgba(255,255,255,.08)";
-        ctx.lineWidth = 1.5;
-        roundRect(ctx, x, y, boxW, boxH, 10, true, true);
-        ctx.font =
-          "11px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-        ctx.fillStyle = "#cfd8dc";
-        ctx.textAlign = "left";
-        
-        // Title
-        ctx.fillText("AI Zombies", x + 10, y + 16);
-        
-        const states = [
-          { label: "Idle", color: "#ef5350", desc: "Patrolling" },
-          { label: "Chasing", color: "#ff5722", desc: "Pursuing player" },
-          { label: "Attacking", color: "#d32f2f", desc: "In combat" },
-        ];
-        
-        let yy = y + 32;
-        for (const s of states) {
-          ctx.save();
-          ctx.fillStyle = s.color;
-          ctx.beginPath();
-          ctx.arc(x + 12, yy - 2, 4, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          ctx.fillText(`${s.label}: ${s.desc}`, x + 22, yy);
-          yy += 16;
-        }
+      
         
         ctx.restore();
-      }
+      
       function drawLighting(viewX, viewY, viewW, viewH) {
         // Lighting system temporarily disabled to remove dots
         return;
@@ -1781,22 +1714,7 @@
           if (ws && ws.readyState === 1)
             ws.send(JSON.stringify({ type: "buy", item: "smg" }));
         }
-        // Optional: mid-round extract attempt on X
-        if (e.key === "x" || e.key === "X") {
-          // Only send if inside an active extraction ring
-          try {
-            const me = state.players.find((p) => p.id === playerId);
-            if (!me || !state.extractions) return;
-            const active = state.extractions.find(
-              (ex) => (ex.activeUntil || 0) > Date.now()
-            );
-            if (!active) return;
-            const d = Math.hypot(me.x - active.x, me.y - active.y);
-            if (d <= active.r && ws && ws.readyState === 1) {
-              ws.send(JSON.stringify({ type: "attempt_extract" }));
-            }
-          } catch {}
-        }
+        // Extraction removed; X key unused
       });
       document.querySelectorAll(".weapon").forEach((btn) =>
         btn.addEventListener("click", (e) => {
@@ -1874,3 +1792,5 @@
     </script>
   </body>
 </html>
+
+

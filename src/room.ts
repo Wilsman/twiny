@@ -35,6 +35,8 @@ interface Input {
   dash?: boolean;
 }
 
+import type { ModId } from './types';
+
 interface Player {
   id: string;
   role: "streamer" | "zombie";
@@ -50,6 +52,9 @@ interface Player {
   lastShotAt?: number;
   lastMeleeAt?: number;
   lastDashAt?: number;
+  level?: number; // streamer only
+  xp?: number;    // streamer only
+  mods?: Partial<Record<ModId, number>>; // stack counts
   hp?: number; // streamer only
   maxHp?: number; // streamer only
   boostUntil?: number; // zombies temporary speed boost timestamp
@@ -79,19 +84,21 @@ interface Player {
   chargeUntil?: number;
   chargeDirX?: number;
   chargeDirY?: number;
+  // Status effects (zombies only)
+  slowUntil?: number;
+  slowMul?: number;
+  burns?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
+  bleeds?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
 }
 
-interface Bullet {
-  id: string;
-  pos: Vec;
-  vel: Vec;
-  ownerId: string; // streamer only in this minimal build
-  ttl: number; // ms
-}
+import { XP_PER_KILL, XP_THRESHOLDS, rollChoices, MOD_INDEX, statsFor, statusFrom } from './upgrades';
+import type { ActiveBullet, BulletSpawnSpec } from './types';
+
+type Bullet = ActiveBullet;
 
 interface Rect { id: string; x: number; y: number; w: number; h: number }
-// M1: Extractions
-interface Extraction { id: string; x: number; y: number; r: number; activeUntil?: number }
+  // Extractions removed
+  interface Extraction { id: string; x: number; y: number; r: number; activeUntil?: number }
 type PickupType = "health" | "speed" | "ammo" | "weapon" | "shield" | "magnet" | "freeze" | "blast" | "treasure" | "key" | "coin" | "gem" | "relic" | "artifact" | "crystal" | "orb" | "medallion" | "scroll" | "crown";
 interface Pickup { id: string; type: PickupType; x: number; y: number }
 
@@ -112,6 +119,11 @@ interface AIZombie {
   roomId?: string;
   pathfindingCooldown: number;
   nextPathUpdate: number;
+  // Status effects
+  slowUntil?: number;
+  slowMul?: number;
+  burns?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
+  bleeds?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
 }
 
 import { CONFIG, TileId, type GameConfig } from './config';
@@ -246,11 +258,6 @@ export class RoomDO {
   startLoop() {
     this.running = true;
     if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
-    // Initial extraction spawn for the run
-    if (this.extractions.length === 0) {
-      this.spawnExtractions();
-      this.rotateExtractionIfNeeded(Date.now());
-    }
     
     // Main game loop - 20Hz (includes state broadcast for responsiveness)
     const step = () => {
@@ -335,6 +342,7 @@ export class RoomDO {
         };
         // Enforce single-streamer per room. Downgrade to zombie if already present.
         if (role === "streamer") {
+          p.level = 0; p.xp = 0; p.mods = {};
           const hasStreamer = [...this.players.values()].some(pl => pl.role === "streamer");
           if (hasStreamer) {
             role = "zombie";
@@ -448,6 +456,14 @@ export class RoomDO {
           }
           break;
         }
+        case 'choose_upgrade': {
+          const p = this.players.get(pid);
+          if (!p || p.role !== 'streamer') return;
+          const id = String(msg.id||'');
+          if (!MOD_INDEX[id as keyof typeof MOD_INDEX]) return;
+          this.applyUpgrade(p.id, id as any);
+          break;
+        }
         case "emote": {
           const p = this.players.get(pid);
           if (!p || p.role !== "zombie") return;
@@ -469,20 +485,7 @@ export class RoomDO {
           }
           break;
         }
-        case "attempt_extract": {
-          const p = this.players.get(pid);
-          if (!p || p.role !== "streamer") return;
-          const now = Date.now();
-          const active = this.extractions.find(e => (e.activeUntil || 0) > now);
-          if (!active) return;
-          const d = Math.hypot(p.pos.x - active.x, p.pos.y - active.y);
-          if (d <= active.r) {
-            p.banked = (p.banked || 0) + (p.score || 0);
-            p.score = 0;
-            this.broadcast("notice", { message: "Extraction successful!" });
-          }
-          break;
-        }
+        // attempt_extract removed
       }
     } catch {}
   }
@@ -504,8 +507,7 @@ export class RoomDO {
       }
     }
 
-    // Ensure extraction rotation
-    this.rotateExtractionIfNeeded(now);
+    // Extractions removed
 
     // Update AI Zombies
     this.updateAIZombies(now);
@@ -519,6 +521,9 @@ export class RoomDO {
       let baseSpeed = p.role === "streamer" ? this.cfg.speeds.streamer : this.cfg.speeds.zombie; // px/s
       if (p.role === 'zombie' && p.zClass) baseSpeed *= this.cfg.zombies.speedMul[p.zClass];
       if (p.role === "zombie" && (this.zombieSlowUntil || 0) > now) baseSpeed *= this.cfg.speeds.zombieSlowMultiplier; // global slow
+      if (p.role === 'zombie' && ((p.slowUntil || 0) > now)) {
+        baseSpeed *= Math.max(0.05, p.slowMul || 1);
+      }
       if (p.role === 'streamer' && ((p as any).gooSlowUntil || 0) > now) baseSpeed *= this.cfg.zombies.spitter.streamerSlowMul;
       const boosted = p.role === "zombie" && (p.boostUntil || 0) > now;
       let speed = boosted ? baseSpeed * this.cfg.speeds.zombieBoostMultiplier : baseSpeed;
@@ -669,41 +674,111 @@ export class RoomDO {
         const d = Math.hypot(dirx, diry) || 1;
         const nx = dirx / d, ny = diry / d;
         const since = nowMs - (p.lastShotAt || 0);
+        const { s } = statsFor(p);
         if (weapon === "pistol") {
-          // Single-click slow shot: fire once per mouse press
-          const cd = boostedW ? this.cfg.weapons.cooldownMs.pistol.boosted : this.cfg.weapons.cooldownMs.pistol.base;
-          // Latch: only fire once until shoot is released
+          const baseCd = boostedW ? this.cfg.weapons.cooldownMs.pistol.boosted : this.cfg.weapons.cooldownMs.pistol.base;
+          const cd = baseCd / Math.max(0.01, s.fireRateMul);
           (p as any)._pistolLatched = (p as any)._pistolLatched || false;
-          if (since >= cd && (p.pistolAmmo ?? 0) > 0 && !(p as any)._pistolLatched) {
-            const speedB = boostedW ? this.cfg.weapons.projectile.pistol.speed * 1.166 : this.cfg.weapons.projectile.pistol.speed;
-            this.bullets.push({ id: crypto.randomUUID().slice(0,6), pos:{x:p.pos.x,y:p.pos.y}, vel:{x:nx*speedB,y:ny*speedB}, ownerId:p.id, ttl: this.cfg.weapons.projectile.pistol.ttl });
-            p.pistolAmmo = Math.max(0, (p.pistolAmmo ?? 0) - 1);
+          const ammoCost = Math.max(1, Math.floor(1 * s.ammoEfficiencyMul));
+          if (since >= cd && (p.pistolAmmo ?? 0) >= ammoCost && !(p as any)._pistolLatched) {
+            const speedB = (boostedW ? this.cfg.weapons.projectile.pistol.speed * 1.166 : this.cfg.weapons.projectile.pistol.speed) * s.projectileSpeedMul;
+            const spec: BulletSpawnSpec = {
+              pos: { x: p.pos.x, y: p.pos.y },
+              vel: { x: nx*speedB, y: ny*speedB },
+              ttl: this.cfg.weapons.projectile.pistol.ttl,
+              ownerId: p.id,
+              meta: {
+                damage: (this.cfg.weapons.damage.pistol||0) * s.damageMul,
+                radius: this.cfg.radii.bulletMargin * s.bulletSizeMul,
+                pierce: s.pierce,
+                bounce: s.bounce,
+                ricochet: s.ricochet,
+                chain: s.chain,
+                status: statusFrom(s),
+                critChance: s.critChance,
+                critMul: s.critMul,
+              }
+            };
+            const spawned: BulletSpawnSpec[] = [spec];
+            for (const [id, n] of Object.entries(p.mods||{})) {
+              (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: this as any, playerId: p.id, bullets: spawned, stats: s });
+            }
+            for (const sp of spawned) {
+              this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            }
+            p.pistolAmmo = Math.max(0, (p.pistolAmmo ?? 0) - ammoCost);
             p.lastShotAt = nowMs;
             (p as any)._pistolLatched = true;
           }
         } else if (weapon === "smg") {
-          const cd = boostedW ? this.cfg.weapons.cooldownMs.smg.boosted : this.cfg.weapons.cooldownMs.smg.base;
-          if (since >= cd && (p.smgAmmo ?? 0) > 0) {
-            const speedB = boostedW ? this.cfg.weapons.projectile.smg.speed * 1.176 : this.cfg.weapons.projectile.smg.speed;
-            const spread = (Math.random()-0.5) * 0.12; // radians
+          const baseCd = boostedW ? this.cfg.weapons.cooldownMs.smg.boosted : this.cfg.weapons.cooldownMs.smg.base;
+          const cd = baseCd / Math.max(0.01, s.fireRateMul);
+          const ammoCost = Math.max(1, Math.floor(1 * s.ammoEfficiencyMul));
+          if (since >= cd && (p.smgAmmo ?? 0) >= ammoCost) {
+            const speedB = (boostedW ? this.cfg.weapons.projectile.smg.speed * 1.176 : this.cfg.weapons.projectile.smg.speed) * s.projectileSpeedMul;
+            const spread = (Math.random()-0.5) * 0.12 * s.spreadMul; // radians
             const cs = Math.cos(spread), sn = Math.sin(spread);
             const vx = nx * cs - ny * sn; const vy = nx * sn + ny * cs;
-            this.bullets.push({ id: crypto.randomUUID().slice(0,6), pos:{x:p.pos.x,y:p.pos.y}, vel:{x:vx*speedB,y:vy*speedB}, ownerId:p.id, ttl: this.cfg.weapons.projectile.smg.ttl });
-            p.smgAmmo = Math.max(0, (p.smgAmmo ?? 0) - 1);
+            const spec: BulletSpawnSpec = {
+              pos: { x: p.pos.x, y: p.pos.y },
+              vel: { x: vx*speedB, y: vy*speedB },
+              ttl: this.cfg.weapons.projectile.smg.ttl,
+              ownerId: p.id,
+              meta: {
+                damage: (this.cfg.weapons.damage.smg||0) * s.damageMul,
+                radius: this.cfg.radii.bulletMargin * s.bulletSizeMul,
+                pierce: s.pierce,
+                bounce: s.bounce,
+                ricochet: s.ricochet,
+                chain: s.chain,
+                status: statusFrom(s),
+                critChance: s.critChance,
+                critMul: s.critMul,
+              }
+            };
+            const spawned: BulletSpawnSpec[] = [spec];
+            for (const [id, n] of Object.entries(p.mods||{})) {
+              (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: this as any, playerId: p.id, bullets: spawned, stats: s });
+            }
+            for (const sp of spawned) this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            p.smgAmmo = Math.max(0, (p.smgAmmo ?? 0) - ammoCost);
             p.lastShotAt = nowMs;
           }
         } else if (weapon === "shotgun") {
-          const cd = boostedW ? this.cfg.weapons.cooldownMs.shotgun.boosted : this.cfg.weapons.cooldownMs.shotgun.base; // slower burst
-          if (since >= cd && (p.shotgunAmmo ?? 0) > 0) {
-            const speedB = boostedW ? this.cfg.weapons.projectile.shotgun.speed * 1.2 : this.cfg.weapons.projectile.shotgun.speed;
+          const baseCd = boostedW ? this.cfg.weapons.cooldownMs.shotgun.boosted : this.cfg.weapons.cooldownMs.shotgun.base;
+          const cd = baseCd / Math.max(0.01, s.fireRateMul);
+          const ammoCost = Math.max(1, Math.floor(1 * s.ammoEfficiencyMul));
+          if (since >= cd && (p.shotgunAmmo ?? 0) >= ammoCost) {
+            const speedB = (boostedW ? this.cfg.weapons.projectile.shotgun.speed * 1.2 : this.cfg.weapons.projectile.shotgun.speed) * s.projectileSpeedMul;
             const pellets = this.cfg.weapons.projectile.shotgun.pellets;
+            const spawned: BulletSpawnSpec[] = [];
             for (let i=0;i<pellets;i++){
-              const spread = (Math.random()-0.5) * 0.45; // radians
+              const spread = (Math.random()-0.5) * 0.45 * s.spreadMul; // radians
               const cs = Math.cos(spread), sn = Math.sin(spread);
               const vx = nx * cs - ny * sn; const vy = nx * sn + ny * cs;
-              this.bullets.push({ id: crypto.randomUUID().slice(0,6), pos:{x:p.pos.x,y:p.pos.y}, vel:{x:vx*speedB,y:vy*speedB}, ownerId:p.id, ttl: this.cfg.weapons.projectile.shotgun.ttl });
+              spawned.push({
+                pos:{x:p.pos.x,y:p.pos.y},
+                vel:{x:vx*speedB,y:vy*speedB},
+                ttl: this.cfg.weapons.projectile.shotgun.ttl,
+                ownerId:p.id,
+                meta:{
+                  damage:(this.cfg.weapons.damage.shotgun||0) * s.damageMul,
+                  radius: this.cfg.radii.bulletMargin * s.bulletSizeMul,
+                  pierce: s.pierce,
+                  bounce: s.bounce,
+                  ricochet: s.ricochet,
+                  chain: s.chain,
+                  status: statusFrom(s),
+                  critChance: s.critChance,
+                  critMul: s.critMul,
+                }
+              });
             }
-            p.shotgunAmmo = Math.max(0, (p.shotgunAmmo ?? 0) - 1);
+            for (const [id, n] of Object.entries(p.mods||{})) {
+              (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: this as any, playerId: p.id, bullets: spawned, stats: s });
+            }
+            for (const sp of spawned) this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            p.shotgunAmmo = Math.max(0, (p.shotgunAmmo ?? 0) - ammoCost);
             p.lastShotAt = nowMs;
           }
         }
@@ -757,56 +832,150 @@ export class RoomDO {
       if (b.ttl <= 0) continue;
       if (b.pos.x < 0 || b.pos.x > this.W || b.pos.y < 0 || b.pos.y > this.H) continue;
 
-      // Collision with walls: stop bullet if inside rect (with small margin)
+      // Collision with walls: use bullet-specific radius and allow simple bounce
       let blocked = false;
       for (const rct of this.walls) {
-        const m = this.cfg.radii.bulletMargin; // bullet radius margin
+        const m = b.meta.radius || this.cfg.radii.bulletMargin;
         if (b.pos.x > rct.x - m && b.pos.x < rct.x + rct.w + m && b.pos.y > rct.y - m && b.pos.y < rct.y + rct.h + m) { blocked = true; break; }
       }
-      if (blocked) continue;
+      if (blocked) {
+        if (b.meta.bounce > 0) {
+          b.meta.bounce -= 1;
+          // Simple reflection: invert both components
+          b.vel.x *= -1; b.vel.y *= -1;
+          aliveBullets.push(b);
+          continue;
+        }
+        continue;
+      }
 
       // Collision with zombies (class-based HP)
-      let hit = false;
+      let consumed = false;
       for (const p of this.players.values()) {
         if (p.role !== "zombie" || !p.alive) continue;
         const r = this.cfg.radii.zombie; // zombie radius
         if (Math.hypot(p.pos.x - b.pos.x, p.pos.y - b.pos.y) < r) {
-          const shooter = [...this.players.values()].find(p => p.id === b.ownerId);
-          const weaponType = shooter?.weapon || 'pistol';
-          const dmg = this.cfg.weapons.damage[weaponType as keyof typeof this.cfg.weapons.damage] || 0;
-          p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - dmg);
+          const base = b.meta.damage || 0;
+          const crit = Math.random() < (b.meta.critChance || 0);
+          const dealt = Math.max(0, Math.round(base * (crit ? (b.meta.critMul || 1) : 1)));
+          p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - dealt);
+          const owner = this.players.get(b.ownerId);
+          const ownerStats = owner ? statsFor(owner).s : undefined;
+          // Lifesteal on hit
+          if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
+            const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
+            owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+          }
+          // Apply status effects
+          if (b.meta.status) {
+            const nowMs = now;
+            const st = b.meta.status;
+            if (st.slowMs && st.slowMul && Math.random() < (st.slowChance || 1)) {
+              p.slowUntil = nowMs + st.slowMs; p.slowMul = st.slowMul;
+            }
+            if (st.burnMs && st.burnDps && Math.random() < (st.burnChance || 1)) {
+              p.burns = p.burns || [];
+              p.burns.push({ until: nowMs + st.burnMs, dps: st.burnDps, nextTick: nowMs + 1000, ownerId: b.ownerId });
+            }
+            if (st.bleedMs && st.bleedDps && Math.random() < (st.bleedChance || 1)) {
+              p.bleeds = p.bleeds || [];
+              p.bleeds.push({ until: nowMs + st.bleedMs, dps: st.bleedDps, nextTick: nowMs + 1000, ownerId: b.ownerId });
+            }
+          }
+          let killed = false;
           if ((p.zHp ?? 0) <= 0) {
-            p.alive = false;
+            p.alive = false; killed = true;
             // Drop ammo on zombie death
             this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: p.pos.x, y: p.pos.y });
             const id = p.id;
             setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, this.cfg.combat.respawnMs);
+            // Reload on kill
+            if (owner && ownerStats && ownerStats.reloadOnKillPct > 0 && owner.role === 'streamer') {
+              this.refundAmmoOnKill(owner, ownerStats.reloadOnKillPct);
+            }
           }
           // Reward streamer
-          const s = [...this.players.values()].find(q => q.id === b.ownerId);
-          if (s) s.score += 1;
-          hit = true; break;
+          if (owner && owner.role === 'streamer') {
+            owner.score += 1;
+            owner.xp = (owner.xp||0) + XP_PER_KILL;
+            const need = XP_THRESHOLDS(owner.level||0);
+            if ((owner.xp||0) >= need) {
+              owner.xp = (owner.xp||0) - need; owner.level = (owner.level||0) + 1;
+              this.offerUpgrades(owner.id);
+            }
+          }
+          // Handle pierce or ricochet
+          if (b.meta.pierce > 0) {
+            b.meta.pierce -= 1; aliveBullets.push(b);
+          } else {
+            // Try ricochet if available
+            if (b.meta.ricochet > 0 && this.retargetBulletRicochet(b, p.id)) {
+              b.meta.ricochet -= 1; aliveBullets.push(b);
+            } else {
+              consumed = true;
+            }
+          }
+          // Chain lightning
+          if (b.meta.chain > 0) {
+            this.applyChainDamage(b, { x: b.pos.x, y: b.pos.y }, p.id, b.meta.chain, Math.round((b.meta.damage||0)*0.7));
+          }
+          break;
         }
       }
-      
-      // Collision with AI zombies
-      if (!hit) {
+      // If not consumed by player-zombie hit, check collision with AI zombies
+      if (!consumed) {
+        let hitAI = false;
         for (const zombie of this.aiZombies) {
           const r = this.cfg.radii.zombie;
           if (Math.hypot(zombie.pos.x - b.pos.x, zombie.pos.y - b.pos.y) < r) {
-            const dmg = 100;
-            zombie.hp = Math.max(0, zombie.hp - dmg);
+            const base = b.meta.damage || 0;
+            const crit = Math.random() < (b.meta.critChance || 0);
+            const dealt = Math.max(0, Math.round(base * (crit ? (b.meta.critMul || 1) : 1)));
+            zombie.hp = Math.max(0, zombie.hp - dealt);
+            const owner = this.players.get(b.ownerId);
+            const ownerStats = owner ? statsFor(owner).s : undefined;
+            // Lifesteal
+            if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
+              const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
+              owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+            }
+            // Status effects
+            if (b.meta.status) {
+              const nowMs = now;
+              const st = b.meta.status;
+              if (st.slowMs && st.slowMul && Math.random() < (st.slowChance || 1)) { zombie.slowUntil = nowMs + st.slowMs; zombie.slowMul = st.slowMul; }
+              if (st.burnMs && st.burnDps && Math.random() < (st.burnChance || 1)) { zombie.burns = zombie.burns || []; zombie.burns.push({ until: nowMs + st.burnMs, dps: st.burnDps, nextTick: nowMs + 1000, ownerId: b.ownerId }); }
+              if (st.bleedMs && st.bleedDps && Math.random() < (st.bleedChance || 1)) { zombie.bleeds = zombie.bleeds || []; zombie.bleeds.push({ until: nowMs + st.bleedMs, dps: st.bleedDps, nextTick: nowMs + 1000, ownerId: b.ownerId }); }
+            }
             // Reward streamer
-            const s = [...this.players.values()].find(q => q.id === b.ownerId);
-            if (s) s.score += 1;
-            hit = true;
+            if (owner && owner.role === 'streamer') {
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+            }
+            // Kill check for reload-on-kill
+            const wasKilled = zombie.hp <= 0;
+            if (wasKilled && owner && ownerStats && ownerStats.reloadOnKillPct > 0 && owner.role === 'streamer') {
+              this.refundAmmoOnKill(owner, ownerStats.reloadOnKillPct);
+            }
+            // Pierce/ricochet handling
+            if (b.meta.pierce > 0) { b.meta.pierce -= 1; aliveBullets.push(b); }
+            else if (b.meta.ricochet > 0 && this.retargetBulletRicochet(b, 'ai:'+zombie.id)) { b.meta.ricochet -= 1; aliveBullets.push(b); }
+            else { consumed = true; }
+            // Chain lightning
+            if (b.meta.chain > 0) { this.applyChainDamage(b, { x: b.pos.x, y: b.pos.y }, 'ai:'+zombie.id, b.meta.chain, Math.round((b.meta.damage||0)*0.7)); }
+            hitAI = true;
             break;
           }
         }
+        if (!hitAI && !consumed) aliveBullets.push(b);
       }
-      if (!hit) aliveBullets.push(b);
     }
     this.bullets = aliveBullets;
+
+    // Process damage-over-time effects (burn/bleed) for both player zombies and AI zombies
+    this.processDotEffects(now);
 
     // Find streamer at the start of the update
     const streamer = [...this.players.values()].find(p => p.role === "streamer");
@@ -1008,57 +1177,19 @@ export class RoomDO {
     }
     this.pickups = remaining;
 
-    // Extraction zone feedback for streamer
+    // Extractions removed
+
     const s = [...this.players.values()].find(p => p.role === "streamer");
-    if (s) {
-      const active = this.extractions.find(e => (e.activeUntil || 0) > now);
-      if (active) {
-        const dist = Math.hypot((s.pos.x - active.x), (s.pos.y - active.y));
-        if (dist <= active.r) {
-          // Player is in extraction zone
-          const lastExtractToast = (s as any).lastExtractToast || 0;
-          if (now - lastExtractToast > 5000) { // Every 5 seconds
-            const timeLeft = Math.max(0, Math.ceil(((active.activeUntil || 0) - now) / 1000));
-            if (s.score > 0) {
-              this.broadcast("notice", { message: `💰 In extraction zone! Press X to bank ${s.score} points (${timeLeft}s left)` });
-            } else {
-              this.broadcast("notice", { message: `🚁 In extraction zone! No points to bank (${timeLeft}s left)` });
-            }
-            (s as any).lastExtractToast = now;
-          }
-        }
-      }
-    }
 
     // Round timer: reset when time elapses
     if ((this.roundEndTime || 0) > 0 && now >= (this.roundEndTime as number)) {
-      // On round end, handle extraction banking for streamer
-      if (s) {
-        const active = this.extractions.find(e => (e.activeUntil || 0) > now);
-        if (active) {
-          const dist = Math.hypot((s.pos.x - active.x), (s.pos.y - active.y));
-          if (dist <= active.r) {
-            // Bank unbanked
-            s.banked = (s.banked || 0) + (s.score || 0);
-            s.score = 0;
-          } else {
-            // Did not extract: lose unbanked
-            s.score = 0;
-          }
-        } else {
-          // No active extraction at end: lose unbanked
-          s.score = 0;
-        }
-      }
+      // On round end, just reset unbanked score (no extractions)
+      if (s) { s.score = 0; }
 
       this.roundEndTime = now + this.roundDurationMs;
       this.bullets = [];
       this.pickups = [];
-      // Reset and respawn extractions (1–2 per round)
-      this.extractions = [];
-      this.spawnExtractions();
-      // Immediately rotate to set one active for the new round
-      this.rotateExtractionIfNeeded(now);
+      // Extractions removed – no respawn/rotation
       // Optionally regenerate map each round (for variety)
       this.generateTileMapAndWalls();
       // Broadcast new map to all clients
@@ -1307,7 +1438,8 @@ export class RoomDO {
     
     if (distance > 0) {
       const baseSpeed = this.cfg.speeds.zombie * this.cfg.zombies.speedMul[zombie.zClass];
-      const speed = (this.zombieSlowUntil || 0) > now ? baseSpeed * this.cfg.speeds.zombieSlowMultiplier : baseSpeed;
+      let speed = (this.zombieSlowUntil || 0) > now ? baseSpeed * this.cfg.speeds.zombieSlowMultiplier : baseSpeed;
+      if ((zombie.slowUntil || 0) > now) speed *= Math.max(0.05, zombie.slowMul || 1);
       
       zombie.vel.x = (dx / distance) * speed;
       zombie.vel.y = (dy / distance) * speed;
@@ -1415,8 +1547,7 @@ export class RoomDO {
       globs: this.spittles.map(g => ({ id: g.id, x: g.pos.x, y: g.pos.y })),
       walls: this.walls.map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h })),
       pickups: this.pickups.map(pk => ({ id: pk.id, type: pk.type, x: pk.x, y: pk.y })),
-      extractions: this.extractions.map(e => ({ id: e.id, x: e.x, y: e.y, r: e.r, activeUntil: e.activeUntil })),
-      aiZombies: this.aiZombies.map(z => ({ 
+            aiZombies: this.aiZombies.map(z => ({ 
         id: z.id, 
         x: z.pos.x, 
         y: z.pos.y, 
@@ -1446,6 +1577,28 @@ export class RoomDO {
     }
   }
 
+  offerUpgrades(playerId: string) {
+    const p = this.players.get(playerId);
+    if (!p || p.role !== 'streamer') return;
+    const choices = rollChoices(p.mods || {}, Math.random);
+    try {
+      p.ws?.send(JSON.stringify({
+        type: 'upgrade_offer',
+        level: p.level || 0,
+        choices: choices.map(c => ({ id: c.id, name: c.name, desc: c.desc, rarity: c.rarity, currentStacks: (p.mods?.[c.id as keyof typeof p.mods] as number) || 0 }))
+      }));
+    } catch {}
+  }
+
+  applyUpgrade(playerId: string, id: import('./types').ModId) {
+    const p = this.players.get(playerId);
+    if (!p || p.role !== 'streamer') return;
+    p.mods = p.mods || {};
+    const prev = (p.mods[id] || 0) as number;
+    (p.mods as any)[id] = prev + 1;
+    this.broadcast('notice', { message: `${p.name} chose ${String(id).replace(/_/g,' ')}` });
+  }
+
   publicPlayer = (p: Player) => ({
     id: p.id,
     name: p.name,
@@ -1456,6 +1609,7 @@ export class RoomDO {
     score: p.score,
     banked: p.banked ?? 0,
     hp: p.hp ?? 0,
+    maxHp: p.role === "streamer" ? (p.maxHp ?? this.cfg.streamer.maxHp) : p.maxHp,
     boosted: (p.boostUntil || 0) > Date.now(),
     ammo: p.ammo ?? 0,
     weaponed: (p.weaponBoostUntil || 0) > Date.now(),
@@ -1475,7 +1629,281 @@ export class RoomDO {
     lastDashAt: p.lastDashAt || 0,
     dashReadyAt: (p.lastDashAt || 0) + this.cfg.dash.cooldownMs,
     zClass: p.zClass || "",
+    level: p.level || 0,
+    xp: p.xp || 0,
+    xpForNext: XP_THRESHOLDS(p.level || 0),
+    mods: Object.entries(p.mods || {}).map(([id, stacks]) => {
+      const mod = MOD_INDEX[id as keyof typeof MOD_INDEX];
+      return {
+        id,
+        stacks,
+        name: mod?.name || id,
+        desc: mod?.desc || "",
+        rarity: mod?.rarity || "common",
+      };
+    }),
   });
+
+  // Optional effect used by some mods; small AoE damage on bullet hit
+  spawnSmallExplosion(b: Bullet) {
+    const radius = 26;
+    for (const z of this.players.values()){
+      if (z.role !== 'zombie' || !z.alive) continue;
+      if (Math.hypot(z.pos.x - b.pos.x, z.pos.y - b.pos.y) <= radius) {
+        z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - Math.round((b.meta?.damage||20) * 0.5));
+        if ((z.zHp ?? 0) <= 0) {
+          z.alive = false;
+          this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+          const id = z.id;
+          setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, this.cfg.combat.respawnMs);
+        }
+      }
+    }
+  }
+
+  processDotEffects(now: number) {
+    // Player-controlled zombies
+    for (const z of this.players.values()){
+      if (z.role !== 'zombie' || !z.alive) continue;
+      if (z.burns && z.burns.length){
+        let kept: typeof z.burns = [];
+        for (const e of z.burns){
+          if (now > e.until) continue;
+          if (now >= e.nextTick) {
+            e.nextTick += 1000;
+            z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - e.dps);
+            const owner = this.players.get(e.ownerId);
+            // Lifesteal on DoT damage
+            if (owner && owner.role==='streamer') {
+              const s = statsFor(owner).s;
+              if (s.lifestealPct>0) {
+                const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
+                owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+              }
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+            }
+            if ((z.zHp ?? 0) <= 0) {
+              z.alive = false;
+              this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+              const id = z.id;
+              setTimeout(()=>{ const zp=this.players.get(id); if (zp){ zp.pos=this.spawnZombiePos(); zp.alive=true; zp.zHp=zp.zMaxHp; } }, this.cfg.combat.respawnMs);
+              if (owner && owner.role==='streamer') {
+                const s = statsFor(owner).s;
+                if (s.reloadOnKillPct>0) this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+              }
+              continue; // don't keep this effect
+            }
+          }
+          kept.push(e);
+        }
+        z.burns = kept;
+      }
+      if (z.bleeds && z.bleeds.length){
+        let kept: typeof z.bleeds = [];
+        for (const e of z.bleeds){
+          if (now > e.until) continue;
+          if (now >= e.nextTick) {
+            e.nextTick += 1000;
+            z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - e.dps);
+            const owner = this.players.get(e.ownerId);
+            if (owner && owner.role==='streamer') {
+              const s = statsFor(owner).s;
+              if (s.lifestealPct>0) {
+                const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
+                owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+              }
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+            }
+            if ((z.zHp ?? 0) <= 0) {
+              z.alive = false;
+              this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+              const id = z.id;
+              setTimeout(()=>{ const zp=this.players.get(id); if (zp){ zp.pos=this.spawnZombiePos(); zp.alive=true; zp.zHp=zp.zMaxHp; } }, this.cfg.combat.respawnMs);
+              if (owner && owner.role==='streamer') {
+                const s = statsFor(owner).s;
+                if (s.reloadOnKillPct>0) this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+              }
+              continue;
+            }
+          }
+          kept.push(e);
+        }
+        z.bleeds = kept;
+      }
+    }
+    // AI zombies
+    for (const a of this.aiZombies){
+      if (a.burns && a.burns.length){
+        let kept: typeof a.burns = [];
+        for (const e of a.burns){
+          if (now > e.until) continue;
+          if (now >= e.nextTick) {
+            e.nextTick += 1000;
+            a.hp = Math.max(0, a.hp - e.dps);
+            const owner = this.players.get(e.ownerId);
+            if (owner && owner.role==='streamer') {
+              const s = statsFor(owner).s;
+              if (s.lifestealPct>0) {
+                const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
+                owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+              }
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+            }
+            if (a.hp <= 0) {
+              if (owner && owner.role==='streamer') {
+                const s = statsFor(owner).s;
+                if (s.reloadOnKillPct>0) this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+              }
+              continue; // killed; removal handled in updateAIZombies
+            }
+          }
+          kept.push(e);
+        }
+        a.burns = kept;
+      }
+      if (a.bleeds && a.bleeds.length){
+        let kept: typeof a.bleeds = [];
+        for (const e of a.bleeds){
+          if (now > e.until) continue;
+          if (now >= e.nextTick) {
+            e.nextTick += 1000;
+            a.hp = Math.max(0, a.hp - e.dps);
+            const owner = this.players.get(e.ownerId);
+            if (owner && owner.role==='streamer') {
+              const s = statsFor(owner).s;
+              if (s.lifestealPct>0) {
+                const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
+                owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+              }
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+            }
+            if (a.hp <= 0) {
+              if (owner && owner.role==='streamer') {
+                const s = statsFor(owner).s;
+                if (s.reloadOnKillPct>0) this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+              }
+              continue;
+            }
+          }
+          kept.push(e);
+        }
+        a.bleeds = kept;
+      }
+    }
+  }
+
+  // Refund ammo on kill based on current weapon and percentage
+  refundAmmoOnKill(owner: Player, pct: number) {
+    const w = owner.weapon || 'pistol';
+    if (w === 'pistol') {
+      const add = Math.max(1, Math.floor(this.cfg.weapons.ammo.max.pistol * pct));
+      owner.pistolAmmo = Math.min(this.cfg.weapons.ammo.max.pistol, (owner.pistolAmmo||0) + add);
+    } else if (w === 'smg') {
+      const add = Math.max(1, Math.floor(this.cfg.weapons.ammo.max.smg * pct));
+      owner.smgAmmo = Math.min(this.cfg.weapons.ammo.max.smg, (owner.smgAmmo||0) + add);
+    } else if (w === 'shotgun') {
+      const add = Math.max(1, Math.floor(this.cfg.weapons.ammo.max.shotgun * pct));
+      owner.shotgunAmmo = Math.min(this.cfg.weapons.ammo.max.shotgun, (owner.shotgunAmmo||0) + add);
+    }
+  }
+
+  // Try to retarget a bullet toward the nearest zombie for ricochet
+  retargetBulletRicochet(b: Bullet, excludeId: string): boolean {
+    const speed = Math.hypot(b.vel.x, b.vel.y) || 1;
+    const range = 220;
+    let best: { x:number;y:number; id:string } | null = null;
+    let bestD = Infinity;
+    for (const z of this.players.values()){
+      if (z.role !== 'zombie' || !z.alive) continue;
+      if (z.id === excludeId) continue;
+      const d = Math.hypot(z.pos.x - b.pos.x, z.pos.y - b.pos.y);
+      if (d < range && d < bestD) { bestD = d; best = { x:z.pos.x, y:z.pos.y, id:z.id }; }
+    }
+    for (const z of this.aiZombies){
+      const zid = 'ai:'+z.id; if (zid === excludeId) continue;
+      const d = Math.hypot(z.pos.x - b.pos.x, z.pos.y - b.pos.y);
+      if (d < range && d < bestD) { bestD = d; best = { x:z.pos.x, y:z.pos.y, id:zid }; }
+    }
+    if (!best) return false;
+    const dx = best.x - b.pos.x; const dy = best.y - b.pos.y; const dd = Math.hypot(dx,dy) || 1;
+    b.vel.x = (dx/dd) * speed; b.vel.y = (dy/dd) * speed;
+    return true;
+  }
+
+  // Apply chain lightning damage bouncing to nearest targets
+  applyChainDamage(b: Bullet, from: {x:number;y:number}, excludeId: string, count: number, dmg: number) {
+    const visited = new Set<string>([excludeId]);
+    let pos = { x: from.x, y: from.y };
+    let remaining = count;
+    let damage = dmg;
+    const range = 200;
+    while (remaining > 0 && damage > 0) {
+      let best: { isAI:boolean; p?: Player; a?: AIZombie; id:string; x:number; y:number } | null = null;
+      let bestD = Infinity;
+      for (const z of this.players.values()){
+        if (z.role !== 'zombie' || !z.alive) continue;
+        if (visited.has(z.id)) continue;
+        const d = Math.hypot(z.pos.x - pos.x, z.pos.y - pos.y);
+        if (d < range && d < bestD) { bestD = d; best = { isAI:false, p:z, id:z.id, x:z.pos.x, y:z.pos.y }; }
+      }
+      for (const z of this.aiZombies){
+        const zid = 'ai:'+z.id; if (visited.has(zid)) continue;
+        const d = Math.hypot(z.pos.x - pos.x, z.pos.y - pos.y);
+        if (d < range && d < bestD) { bestD = d; best = { isAI:true, a:z, id:zid, x:z.pos.x, y:z.pos.y }; }
+      }
+      if (!best) break;
+      visited.add(best.id);
+      if (best.isAI && best.a) {
+        best.a.hp = Math.max(0, best.a.hp - damage);
+        // Reward owner per hit
+        const owner = this.players.get(b.ownerId);
+        if (owner && owner.role==='streamer') {
+          owner.score += 1;
+          owner.xp = (owner.xp||0) + XP_PER_KILL;
+          const need = XP_THRESHOLDS(owner.level||0);
+          if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+        }
+        if (best.a.hp <= 0) {
+          const owner = this.players.get(b.ownerId);
+          const s = owner ? statsFor(owner).s : undefined;
+          if (owner && s && s.reloadOnKillPct>0 && owner.role==='streamer') this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+        }
+      } else if (!best.isAI && best.p) {
+        best.p.zHp = Math.max(0, (best.p.zHp ?? this.cfg.zombies.baseHp) - damage);
+        if ((best.p.zHp ?? 0) <= 0) {
+          best.p.alive = false;
+          this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: best.p.pos.x, y: best.p.pos.y });
+          const id = best.p.id;
+          setTimeout(()=>{ const zp=this.players.get(id); if (zp){ zp.pos=this.spawnZombiePos(); zp.alive=true; zp.zHp=zp.zMaxHp; } }, this.cfg.combat.respawnMs);
+          const owner = this.players.get(b.ownerId);
+          const s = owner ? statsFor(owner).s : undefined;
+          if (owner && s && s.reloadOnKillPct>0 && owner.role==='streamer') this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+        }
+        const owner = this.players.get(b.ownerId);
+        if (owner && owner.role==='streamer') {
+          owner.score += 1;
+          owner.xp = (owner.xp||0) + XP_PER_KILL;
+          const need = XP_THRESHOLDS(owner.level||0);
+          if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+        }
+      }
+      pos = { x: best.x, y: best.y };
+      remaining -= 1;
+      damage = Math.floor(damage * 0.7);
+    }
+  }
 
   sanitizeName(n: string) {
     if (!n) return "";
@@ -1859,95 +2287,8 @@ export class RoomDO {
 
   randRange(a:number,b:number){ return a + Math.floor(Math.random()*(b-a+1)); }
 
-  // M1: Extraction helpers
-  spawnExtractions() {
-    // Spawn exactly 1 extraction zone in a room accessible to the streamer
-    let exPos: Vec | null = null;
-    const streamer = [...this.players.values()].find(p => p.role === "streamer");
-    
-    if (this.map && this.map.rooms && this.map.rooms.length > 0 && streamer) {
-      // Find streamer's current room
-      const streamerTileX = Math.floor(streamer.pos.x / this.map.size);
-      const streamerTileY = Math.floor(streamer.pos.y / this.map.size);
-      
-      // Get all accessible rooms using flood fill from streamer position
-      const accessibleRooms = this.getAccessibleRooms(streamerTileX, streamerTileY);
-      
-      if (accessibleRooms.length > 0) {
-        // Pick a random accessible room
-        const room = accessibleRooms[Math.floor(Math.random() * accessibleRooms.length)];
-        
-        // Find a good floor position in this room
-        const candidates: Vec[] = [];
-        for (let ty = room.y + 1; ty < room.y + room.h - 1; ty++) {
-          for (let tx = room.x + 1; tx < room.x + room.w - 1; tx++) {
-            if (tx >= 0 && tx < this.map.w && ty >= 0 && ty < this.map.h) {
-              const tile = this.map.tiles[ty * this.map.w + tx];
-              if (tile === 0) { // floor tile
-                const worldX = tx * this.map.size + this.map.size / 2;
-                const worldY = ty * this.map.size + this.map.size / 2;
-                candidates.push({ x: worldX, y: worldY });
-              }
-            }
-          }
-        }
-        
-        if (candidates.length > 0) {
-          // Prefer center positions
-          const centerX = (room.x + room.w / 2) * this.map.size;
-          const centerY = (room.y + room.h / 2) * this.map.size;
-          
-          candidates.sort((a, b) => {
-            const distA = Math.hypot(a.x - centerX, a.y - centerY);
-            const distB = Math.hypot(b.x - centerX, b.y - centerY);
-            return distA - distB;
-          });
-          
-          // Pick from the most central positions
-          const topCandidates = candidates.slice(0, Math.max(1, Math.floor(candidates.length * 0.3)));
-          exPos = topCandidates[Math.floor(Math.random() * topCandidates.length)];
-        }
-      }
-    }
-    
-    // Fallback: spawn near streamer if no accessible rooms found
-    if (!exPos && streamer) {
-      // Try positions in a radius around the streamer
-      for (let attempts = 0; attempts < 20; attempts++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 100 + Math.random() * 200;
-        const testX = streamer.pos.x + Math.cos(angle) * dist;
-        const testY = streamer.pos.y + Math.sin(angle) * dist;
-        
-        if (testX >= 0 && testX < this.W && testY >= 0 && testY < this.H) {
-          const tileX = Math.floor(testX / this.map!.size);
-          const tileY = Math.floor(testY / this.map!.size);
-          
-          if (tileX >= 0 && tileX < this.map!.w && tileY >= 0 && tileY < this.map!.h) {
-            const tile = this.map!.tiles[tileY * this.map!.w + tileX];
-            if (tile === 0) { // floor tile
-              exPos = { x: testX, y: testY };
-              break;
-            }
-          }
-        }
-      }
-    }
-    
-    // Final fallback
-    if (!exPos) {
-      exPos = this.randomFreePos(32);
-    }
-    
-    if (exPos) {
-      this.extractions.push({ 
-        id: crypto.randomUUID().slice(0, 6), 
-        x: exPos.x, 
-        y: exPos.y, 
-        r: this.cfg.extraction.radius 
-      });
-    }
-  }
+  // Extractions removed
+  spawnExtractions() { /* no-op */ }
 
   // Get all rooms accessible from a starting tile position
   getAccessibleRooms(startX: number, startY: number): Array<{x: number; y: number; w: number; h: number}> {
@@ -2045,16 +2386,5 @@ export class RoomDO {
     return reachable;
   }
 
-  rotateExtractionIfNeeded(nowMs: number) {
-    if (this.extractions.length === 0) return;
-    const active = this.extractions.find(e => (e.activeUntil || 0) > nowMs);
-    if (active) return;
-    // Choose a new extraction and set active window
-    const idx = Math.floor(Math.random() * this.extractions.length);
-    const dur = this.cfg.extraction.minActiveMs + Math.floor(Math.random() * (this.cfg.extraction.maxActiveMs - this.cfg.extraction.minActiveMs + 1));
-    for (let i = 0; i < this.extractions.length; i++) this.extractions[i].activeUntil = undefined;
-    this.extractions[idx].activeUntil = nowMs + dur;
-    // Announce change
-    this.broadcast("notice", { message: "Extraction moved!" });
-  }
+  rotateExtractionIfNeeded(nowMs: number) { /* no-op */ }
 }

@@ -68,21 +68,74 @@
     @keyframes bob { 0%,100%{ transform: translateX(-50%) translateY(0); } 50%{ transform: translateX(-50%) translateY(4px); } }
   </style>
   <script type="module">
-    // tiny confetti animation on load
+    // Tiny confetti bursts on load that loop at random, firing from random sides/angles
     window.addEventListener('load', () => {
-      const el = document.createElement('div');
-      el.style.position = 'fixed'; el.style.inset = '0'; el.style.pointerEvents='none'; document.body.appendChild(el);
-      const n = 60; const parts = [];
-      for (let i=0;i<n;i++){
-        const p=document.createElement('div'); p.style.position='absolute'; p.style.width='6px'; p.style.height='10px'; p.style.borderRadius='2px';
-        p.style.left = Math.random()*100+'%'; p.style.top = '-20px';
-        const colors=['#60a5fa','#f472b6','#2dd4bf','#ffd54f']; p.style.background = colors[i%colors.length];
-        p.style.opacity = '.9'; p.style.transform = `rotate(${Math.random()*180}deg)`;
-        el.appendChild(p); parts.push({el:p, y:-20, vy: 1+Math.random()*3, x: parseFloat(p.style.left), vx: (Math.random()-.5)*0.2, r: Math.random()*180, vr: (Math.random()-.5)*3});
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.inset = '0';
+      container.style.pointerEvents = 'none';
+      container.style.overflow = 'hidden';
+      document.body.appendChild(container);
+
+      const colors = ['#60a5fa','#f472b6','#2dd4bf','#ffd54f'];
+      const parts = [];
+
+      function spawnBurst(count=50){
+        // Random origin: top, bottom, left, right, or center
+        const side = ['top','bottom','left','right','center'][Math.floor(Math.random()*5)];
+        const w = window.innerWidth; const h = window.innerHeight;
+        let ox = w/2, oy = h/2;
+        if (side==='top')    { ox = Math.random()*w; oy = -20; }
+        if (side==='bottom') { ox = Math.random()*w; oy = h+20; }
+        if (side==='left')   { ox = -20; oy = Math.random()*h; }
+        if (side==='right')  { ox = w+20; oy = Math.random()*h; }
+
+        for (let i=0;i<count;i++){
+          const el = document.createElement('div');
+          el.style.position = 'absolute';
+          el.style.width = '6px'; el.style.height = '10px'; el.style.borderRadius = '2px';
+          el.style.left = ox + 'px'; el.style.top = oy + 'px';
+          el.style.background = colors[i % colors.length];
+          el.style.opacity = '.95';
+          el.style.transform = `rotate(${Math.random()*360}deg)`;
+          container.appendChild(el);
+          // Random direction and speed
+          const ang = Math.random()*Math.PI*2; // 0..2PI any direction
+          const spd = 2 + Math.random()*4;     // pixels/frame (scaled later)
+          const vx = Math.cos(ang)*spd;
+          const vy = Math.sin(ang)*spd;
+          const vr = (Math.random()-.5)*6;     // deg/frame
+          parts.push({ el, x: ox, y: oy, vx, vy, r: Math.random()*360, vr, life: 120 + Math.random()*80 });
+        }
       }
-      const step=()=>{ for(const q of parts){ q.vy+=0.02; q.y+=q.vy; q.x+=q.vx; q.r+=q.vr; q.el.style.top=q.y+'px'; q.el.style.left=q.x+'%'; q.el.style.transform=`rotate(${q.r}deg)`; if(q.y>window.innerHeight+40) q.y=-20; } requestAnimationFrame(step); };
-      step();
-      setTimeout(()=>{ el.remove(); }, 1800);
+
+      let last = performance.now();
+      function step(now){
+        const dt = Math.min(32, now - last) / 16.6; // normalize to ~60fps steps
+        last = now;
+        for (let i = parts.length-1; i>=0; i--) {
+          const p = parts[i];
+          // simple drag and gravity-ish drift
+          p.vx *= 0.995; p.vy = p.vy*0.995 + 0.06;
+          p.x += p.vx * dt; p.y += p.vy * dt; p.r += p.vr * dt; p.life -= dt;
+          p.el.style.left = p.x + 'px'; p.el.style.top = p.y + 'px'; p.el.style.transform = `rotate(${p.r}deg)`;
+          // Cull when off-screen or out of life
+          if (p.life <= 0 || p.x < -60 || p.x > window.innerWidth+60 || p.y < -80 || p.y > window.innerHeight+80) {
+            p.el.remove(); parts.splice(i,1);
+          }
+        }
+        requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+
+      // Kick off initial burst and then loop random bursts
+      spawnBurst(60);
+      function loop(){
+        spawnBurst(40 + Math.floor(Math.random()*40));
+        // Next burst between 3–8 seconds
+        setTimeout(loop, 3000 + Math.random()*5000);
+      }
+      setTimeout(loop, 1800 + Math.random()*1200);
     });
 
     // Role selection modal
@@ -101,8 +154,7 @@
           <div><strong>Melee (bat):</strong> Right‑click or Q/E</div>
           <div><strong>Weapons:</strong> 1=Pistol · 2=SMG · 3=Shotgun</div>
           <div><strong>Dash:</strong> Space (1s CD) — brief burst</div>
-          <div><strong>Extract:</strong> X inside the active ring to bank loot</div>
-          <div><strong>Scoring:</strong> Treasure adds <em>Score</em> (unbanked). Only extraction banks to <em>Banked</em>. Dying clears unbanked; banked persists.</div>
+          <div><strong>Scoring:</strong> Treasure adds <em>Score</em>. Dying clears current score.</div>
         </div>
         <details style="margin-top:10px">
           <summary style="cursor:pointer">Advanced: Edit Room Config (JSON)</summary>
@@ -118,7 +170,7 @@
           <div>• <span style=\"color:#64b5f6\">Runner</span>: Sprint burst on click (1.6× speed, 0.6× HP)</div>
           <div>• <span style=\"color:#ffa726\">Brute</span>: Charge toward cursor on click (0.7× speed, 2× HP, strong knockback)</div>
           <div>• <span style=\"color:#ba68c8\">Spitter</span>: Spit slow glob on click (damage + slow); also auto‑spits in range</div>
-          <div style=\"margin-top:6px\">Touch the streamer to deal damage; coordinate to deny extraction.</div>
+          <div style=\"margin-top:6px\">Touch the streamer to deal damage; coordinate to pin and overwhelm.</div>
         </div>`;
       body.innerHTML = isStreamer ? streamerBody : zombieBody;
       // Preload default config JSON if streamer
@@ -190,7 +242,7 @@
     <div class="blob b3"></div>
     <div class="hero-inner">
       <div class="title">Streamer vs. Chat — Zombies</div>
-      <div class="subtitle">A fast, top‑down extraction arena: One streamer, many zombies. Bank loot, survive the horde, and extract before time runs out.</div>
+      <div class="subtitle">A fast, top‑down arena: One streamer, many zombies. Loot treasure, survive the horde, and rack up a high score.</div>
       <div class="cta">
         <button class="btn-xl primary" id="ctaStreamer">Play as Streamer</button>
         <button class="btn-xl secondary" id="ctaZombie">Join as Zombie</button>
@@ -203,7 +255,7 @@
     </button>
     <div class="cards">
       <div class="card hero-card"><div class="card-title">20Hz Server</div><div class="tip">Authoritative sim with fair hits and clean rollback for inputs.</div></div>
-      <div class="card hero-card"><div class="card-title">Tarkov Tension</div><div class="tip">Loot treasure to raise your score, but only extraction banks it.</div></div>
+      <div class="card hero-card"><div class="card-title">Relentless Pressure</div><div class="tip">Loot treasure to raise your score while dodging the swarm.</div></div>
       <div class="card hero-card"><div class="card-title">Chat vs. You</div><div class="tip">Hundreds of slow zombies, simple inputs, and satisfying chaos.</div></div>
     </div>
   </div>
@@ -215,9 +267,8 @@
         <div><strong>Move:</strong> WASD · <strong>Aim:</strong> Mouse · <strong>Shoot:</strong> Left‑click</div>
         <div><strong>Melee (bat):</strong> Right‑click or Q/E · short arc</div>
         <div><strong>Weapons:</strong> 1=Pistol · 2=SMG · 3=Shotgun</div>
-        <div><strong>Dash:</strong> Space (1s CD) · brief burst</div>
-        <div><strong>Extract:</strong> X inside the active ring to bank loot</div>
-        <div><strong>Scoring:</strong> Treasure adds <em>Score</em> (unbanked). Only extraction moves it to <em>Banked</em>. Dying clears unbanked, banked persists.</div>
+          <div><strong>Dash:</strong> Space (1s CD) · brief burst</div>
+          <div><strong>Scoring:</strong> Treasure adds <em>Score</em>. Dying clears unbanked points.</div>
       </div>
     </div>
     <div class="card hero-card">
@@ -229,7 +280,7 @@
         <div>• <span style="color:#64b5f6">Runner</span>: 1.6× speed, 0.6× HP. Left‑click = short sprint burst.</div>
         <div>• <span style="color:#ffa726">Brute</span>: 0.7× speed, 2× HP. Left‑click = charge toward cursor (strong knockback on hit).</div>
         <div>• <span style="color:#ba68c8">Spitter</span>: normal speed/HP. Left‑click = spit a slow purple glob (damage + slow). Also spits automatically in range.</div>
-        <div style="margin-top:6px">Touching the streamer deals damage; team up to deny extraction.</div>
+        <div style="margin-top:6px">Touching the streamer deals damage; coordinate to pin and overwhelm.</div>
       </div>
     </div>
   </div>
@@ -239,7 +290,7 @@
       <div class="card-title">Legend & Tips</div>
       <div class="tip" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
         <div>
-          <div style="margin-bottom:8px"><strong>Extraction:</strong> Green ring on the map; rotates periodically. Be inside to bank at round end, or press X as streamer.</div>
+          <div><strong>Flow:</strong> Treasure increases score. Dying resets current score.</div>
           <div><strong>Minimap:</strong> Bottom‑right, zoomed to your position.</div>
         </div>
         <div>

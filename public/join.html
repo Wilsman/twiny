@@ -277,16 +277,16 @@
 
     // Simple camera for zombies: follow self
     let camX = 0, camY = 0;
-    const zoom = 2.2;
+    const zoom = 2.4; // match streamer view
     function draw(dt=16){
       const dpr = Math.max(1, Math.min(3, window.devicePixelRatio||1));
       const rect = c.getBoundingClientRect();
       ctx.setTransform(1,0,0,1,0,0);
       ctx.clearRect(0,0,c.width,c.height);
       ctx.setTransform(dpr,0,0,dpr,0,0);
-      // Fill background
-      ctx.fillStyle = '#0C0C0C';
-      ctx.fillRect(0,0, rect.width, rect.height);
+      // Fill background with dungeon-themed dark color in CSS px
+      ctx.fillStyle = "#0a0c0f";
+      ctx.fillRect(0,0,rect.width,rect.height);
       // Update camera target (follow me)
       let meRaw = state.players.find(p=>p.id===playerId);
       if (!meRaw && state.players && state.players.length) {
@@ -310,31 +310,10 @@
       if (gameMap) drawTiles(camX, camY, rect.width/zoom, rect.height/zoom);
       // Walls/rooms
       if (state.walls){
-        ctx.fillStyle = '#FFFFFF';
+        ctx.fillStyle = '#2a2f36';
         for (const w of state.walls){ ctx.fillRect(w.x,w.y,w.w,w.h); }
       }
-      // Extractions
-      if (state.extractions) {
-        for (const ex of state.extractions) {
-          const nowMs = performance.now();
-          const active = (ex.activeUntil||0) > Date.now();
-          const pulse = active ? (0.6 + 0.4 * Math.abs(Math.sin(nowMs / 350))) : 0.25;
-          const timeLeft = active ? Math.max(0, Math.ceil(((ex.activeUntil||0) - Date.now()) / 1000)) : 0;
-          ctx.save();
-          ctx.lineWidth = active ? 3 : 2;
-          ctx.globalAlpha = pulse;
-          ctx.strokeStyle = '#81c784';
-          ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r, 0, Math.PI*2); ctx.stroke();
-          if (active) { ctx.globalAlpha = Math.max(0, pulse * 0.35); ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.r + 6, 0, Math.PI*2); ctx.stroke(); }
-          ctx.globalAlpha = active ? 0.95 : 0.35;
-          ctx.fillStyle = '#c8e6c9';
-          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-          ctx.textAlign = 'center';
-          const label = active ? `EXTRACT ${timeLeft}s` : 'EXTRACT';
-          ctx.fillText(label, ex.x, ex.y - ex.r - 6);
-          ctx.restore();
-        }
-      }
+      // Extractions removed
       // Pickups
       if (state.pickups){
         for (const pk of state.pickups){
@@ -482,17 +461,33 @@
 
       ctx.restore();
 
-      // Simple HUD: extraction time (top-right)
-      const activeEx = (state.extractions||[]).find(ex => (ex.activeUntil||0) > Date.now());
-      const extractLeft = activeEx ? Math.max(0, Math.ceil(((activeEx.activeUntil||0) - Date.now())/1000)) : 0;
-      const pad=8; const boxW=150; const boxH=28; const x0 = rect.width - boxW - 12; const y0 = 12;
-      ctx.save();
-      ctx.globalAlpha = .95; ctx.fillStyle = 'rgba(18,20,24,.86)'; ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0,y0,boxW,boxH,8) : (ctx.moveTo(x0+8,y0),ctx.lineTo(x0+boxW-8,y0),ctx.quadraticCurveTo(x0+boxW,y0,x0+boxW,y0+8),ctx.lineTo(x0+boxW,y0+boxH-8),ctx.quadraticCurveTo(x0+boxW,y0+boxH,x0+boxW-8,y0+boxH),ctx.lineTo(x0+8,y0+boxH),ctx.quadraticCurveTo(x0,y0+boxH,x0,y0+boxH-8),ctx.lineTo(x0,y0+8),ctx.quadraticCurveTo(x0,y0,x0+8,y0));
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#cfd8dc'; ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-      ctx.fillText(`Extract: ${activeEx?extractLeft+'s':'—'}`, x0+10, y0+18);
-      ctx.restore();
+      // Crosshair (screen-space, centered at aim cursor)
+      {
+        const dpr = Math.max(1, Math.min(3, window.devicePixelRatio||1));
+        ctx.setTransform(dpr,0,0,dpr,0,0);
+        const cx = input.aimX || 0; const cy = input.aimY || 0;
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#cfd8dc';
+        // Outer ring
+        ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI*2); ctx.stroke();
+        // Gap cross
+        const arm = 14, gap = 6, len = 9;
+        // left
+        ctx.beginPath(); ctx.moveTo(cx - arm, cy); ctx.lineTo(cx - gap, cy); ctx.stroke();
+        // right
+        ctx.beginPath(); ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + arm, cy); ctx.stroke();
+        // top
+        ctx.beginPath(); ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy - gap); ctx.stroke();
+        // bottom
+        ctx.beginPath(); ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + arm); ctx.stroke();
+        // Subtle center dot
+        ctx.globalAlpha = 0.7; ctx.fillStyle = '#cfd8dc'; ctx.beginPath(); ctx.arc(cx, cy, 1.5, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+
+      // Extractions removed
 
       // Mini-map (bottom-right)
       drawMiniMap();
@@ -578,14 +573,7 @@
           ctx.strokeRect(x, y, ww, hh);
         }
       }
-      if (state.extractions){
-        for (const ex of state.extractions){
-          const active = (ex.activeUntil||0) > Date.now();
-          ctx.beginPath(); ctx.strokeStyle = active ? '#81c784' : 'rgba(129,199,132,.4)'; ctx.lineWidth = active ? 2 : 1;
-          ctx.arc(cx + (ex.x - centerX)*scale, cy + (ex.y - centerY)*scale, Math.max(1, ex.r*scale), 0, Math.PI*2);
-          ctx.stroke();
-        }
-      }
+      // Extractions removed
       if (state.players){
         for (const p of state.players){
           const px = cx + (p.x - centerX) * scale; const py = cy + (p.y - centerY) * scale;
