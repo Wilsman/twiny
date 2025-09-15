@@ -75,6 +75,8 @@
     let gameMap = null; // {w,h,size,theme,tiles:Uint8Array, props, lights}
     const input = inputController({ mouse:true });
     const effects = [];
+    // Damage numbers for floating damage display
+    let damageNumbers = [];
     // Smoothing for 20Hz -> 60fps render
     const smooth = new Map(); // id -> {x,y}
     const SMOOTH_TAU = 90; // ms
@@ -220,8 +222,30 @@
           stateMsgCount++;
           // impact effects
           const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
-          for (const [id,pos] of prevBulletPos){ if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220}); }
+          for (const [id,pos] of prevBulletPos) {
+            if (!curMap.has(id)) effects.push({x:pos.x,y:pos.y,ttl:220});
+          }
           prevBulletPos = curMap;
+
+          // Process damage numbers
+          if (msg.damageNumbers) {
+            for (const dn of msg.damageNumbers) {
+              // Check if we already have this damage number
+              if (!damageNumbers.some(existing => existing.id === dn.id)) {
+                damageNumbers.push({
+                  id: dn.id,
+                  x: dn.x,
+                  y: dn.y,
+                  damage: dn.damage,
+                  isCrit: dn.isCrit,
+                  isDot: dn.isDot,
+                  timestamp: dn.timestamp,
+                  startTime: Date.now(),
+                  offsetY: 0
+                });
+              }
+            }
+          }
 
           state = msg; const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
           status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`; 
@@ -386,6 +410,49 @@
       }
       // Bullet impact effects
       for (let i=effects.length-1;i>=0;i--){ const e=effects[i]; e.ttl-=dt; if (e.ttl<=0){ effects.splice(i,1); continue; } ctx.save(); const a=Math.max(0,e.ttl/220); ctx.globalAlpha=a; ctx.strokeStyle='#ffd54f'; ctx.beginPath(); ctx.arc(e.x,e.y,(1-a)*12+2,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+
+      // Damage numbers
+      const now = Date.now();
+      for (let i = damageNumbers.length - 1; i >= 0; i--) {
+        const dn = damageNumbers[i];
+        const age = now - dn.startTime;
+        const maxAge = 1500; // 1.5 seconds
+        
+        if (age > maxAge) {
+          damageNumbers.splice(i, 1);
+          continue;
+        }
+        
+        // Animation: float up and fade out
+        const progress = age / maxAge;
+        const alpha = Math.max(0, 1 - progress * progress); // Quadratic fade
+        dn.offsetY = -progress * 60; // Float up 60 pixels
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Different styles for different damage types
+        if (dn.isCrit) {
+          ctx.font = 'bold 18px monospace';
+          ctx.fillStyle = '#ff4444';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.strokeText(dn.damage.toString(), dn.x, dn.y + dn.offsetY);
+          ctx.fillText(dn.damage.toString(), dn.x, dn.y + dn.offsetY);
+        } else if (dn.isDot) {
+          ctx.font = '12px monospace';
+          ctx.fillStyle = '#88ff44';
+          ctx.fillText(dn.damage.toString(), dn.x, dn.y + dn.offsetY);
+        } else {
+          ctx.font = '14px monospace';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(dn.damage.toString(), dn.x, dn.y + dn.offsetY);
+        }
+        
+        ctx.restore();
+      }
       // Players' dash trails under characters
       const nowT = performance.now();
       if (state.players){

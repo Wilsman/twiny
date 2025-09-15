@@ -151,7 +151,31 @@
       };
 
       const { c, ctx } = minimalCanvas(1440, 810);
-      document.querySelector(".stage").appendChild(c);
+      const stage = document.querySelector(".stage");
+      stage.appendChild(c);
+      
+      // Move HUD layer to be positioned relative to canvas
+      const hudLayer = document.querySelector(".hud-layer");
+      if (hudLayer) {
+        // Position HUD layer to match canvas dimensions and position
+        const updateHudPosition = () => {
+          const canvasRect = c.getBoundingClientRect();
+          const stageRect = stage.getBoundingClientRect();
+          
+          hudLayer.style.left = (canvasRect.left - stageRect.left) + 'px';
+          hudLayer.style.top = (canvasRect.top - stageRect.top) + 'px';
+          hudLayer.style.width = canvasRect.width + 'px';
+          hudLayer.style.height = canvasRect.height + 'px';
+        };
+        
+        // Update position initially and on resize
+        updateHudPosition();
+        window.addEventListener('resize', updateHudPosition);
+        
+        // Also update when canvas size changes
+        const resizeObserver = new ResizeObserver(updateHudPosition);
+        resizeObserver.observe(c);
+      }
       suppressPageHotkeys();
       const input = inputController();
 
@@ -171,6 +195,8 @@
       let prevShoot = false;
       let lastMuzzleAt = 0;
       let prevBulletPos = new Map();
+      // Damage numbers for floating damage display
+      let damageNumbers = [];
       // Dash trails: per-player history of recent positions while dashing
       const trails = new Map(); // id -> Array<{x:number,y:number,t:number}>
       const TRAIL_TTL = 260; // ms
@@ -396,6 +422,61 @@
             }
             prevBulletPos = curMap;
 
+            // Process damage numbers
+            if (msg.damageNumbers) {
+              // Create a set of existing IDs for faster lookup
+              const existingIds = new Set(damageNumbers.map(dn => dn.id));
+              
+              for (const dn of msg.damageNumbers) {
+                // Check if we already have this damage number
+                if (!existingIds.has(dn.id)) {
+                  // Find the target entity (player or AI zombie) to attach damage number to
+                  let targetId = null;
+                  let isAI = false;
+                  
+                  // Check if damage number is near any player
+                  for (const player of msg.players) {
+                    const dist = Math.hypot(player.x - dn.x, player.y - dn.y);
+                    if (dist < 30) { // Within 30 pixels
+                      targetId = player.id;
+                      break;
+                    }
+                  }
+                  
+                  // If not found near players, check AI zombies
+                  if (!targetId && msg.aiZombies) {
+                    for (const zombie of msg.aiZombies) {
+                      const dist = Math.hypot(zombie.x - dn.x, zombie.y - dn.y);
+                      if (dist < 30) { // Within 30 pixels
+                        targetId = zombie.id;
+                        isAI = true;
+                        break;
+                      }
+                    }
+                  }
+                  
+                  damageNumbers.push({
+                    id: dn.id,
+                    x: dn.x,
+                    y: dn.y,
+                    damage: dn.damage,
+                    isCrit: dn.isCrit,
+                    isDot: dn.isDot,
+                    timestamp: dn.timestamp,
+                    startTime: Date.now(),
+                    offsetY: 0,
+                    targetId: targetId,
+                    isAI: isAI,
+                    initialX: dn.x,
+                    initialY: dn.y
+                  });
+                  
+                  // Add to existing IDs set to prevent duplicates within this message
+                  existingIds.add(dn.id);
+                }
+              }
+            }
+
             state = msg;
             const me = msg.players.find((p) => p.id === playerId);
             if (me) {
@@ -406,7 +487,25 @@
               const xpNeed = me.xpForNext ?? xpThreshold(level);
               scoreEl.textContent = me.score;
               bankedEl.textContent = me.banked ?? 0;
-              hpEl.textContent = `${hpVal}/${maxHp}`;
+              
+              // Check if HP has decreased
+              const prevHpText = hpEl.textContent.split('/')[0];
+              const prevHp = parseInt(prevHpText) || maxHp;
+              const hpDecreased = hpVal < prevHp && prevHp <= maxHp; // Only trigger if HP actually decreased and not just respawned
+              
+              // Update HP display
+              hpEl.innerHTML = `<span id="hp-value">${hpVal}</span>/<span id="hp-max">${maxHp}</span>`;
+              
+              // Add pulse effect if HP decreased
+              if (hpDecreased) {
+                const hpValueEl = document.getElementById('hp-value');
+                if (hpValueEl) {
+                  hpValueEl.classList.add('hp-damage-pulse');
+                  setTimeout(() => {
+                    if (hpValueEl) hpValueEl.classList.remove('hp-damage-pulse');
+                  }, 400);
+                }
+              }
               const w = me.weapon || "pistol";
               weaponEl.textContent = w;
               let ammo = 0;
@@ -414,11 +513,49 @@
               else if (w === "smg") ammo = me.smgAmmo ?? 0;
               else if (w === "shotgun") ammo = me.shotgunAmmo ?? 0;
               else ammo = 0;
+              
+              // Check if ammo has decreased
+              const prevAmmo = parseInt(ammoEl.textContent) || 0;
+              const ammoDecreased = ammo < prevAmmo;
+              
               ammoEl.textContent = ammo;
+              
+              // Add pulse class if ammo decreased
+              if (ammoDecreased) {
+                ammoEl.classList.add('ammo-pulse');
+                // Remove the class after animation completes
+                setTimeout(() => ammoEl.classList.remove('ammo-pulse'), 300);
+              }
+              
               if (hudScoreEl) hudScoreEl.textContent = String(me.score ?? 0);
-              if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
+if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
               if (hudWeaponEl) hudWeaponEl.textContent = w;
-              if (hudAmmoEl) hudAmmoEl.textContent = String(ammo);
+              
+              // Update HUD HP with pulse effect
+              if (hudHpEl) {
+                const prevHudHpText = hudHpEl.textContent.split('/')[0];
+                const prevHudHp = parseInt(prevHudHpText) || maxHp;
+                const hudHpDecreased = hpVal < prevHudHp && prevHudHp <= maxHp;
+                
+                if (hudHpDecreased) {
+                  hudHpEl.classList.add('hud-hp-damage-pulse');
+                  setTimeout(() => {
+                    if (hudHpEl) hudHpEl.classList.remove('hud-hp-damage-pulse');
+                  }, 400);
+                }
+                
+                hudHpEl.innerHTML = `<span>${hpVal}</span>/<span>${maxHp}</span>`;
+              }
+              
+              // Update HUD ammo counter with the same pulse effect
+              if (hudAmmoEl) {
+                const prevHudAmmo = parseInt(hudAmmoEl.textContent) || 0;
+                hudAmmoEl.textContent = String(ammo);
+                if (ammo < prevHudAmmo) {
+                  hudAmmoEl.classList.add('ammo-pulse');
+                  setTimeout(() => hudAmmoEl.classList.remove('ammo-pulse'), 300);
+                }
+              }
               if (hudHpEl) hudHpEl.textContent = `${hpVal}/${maxHp}`;
               if (hudLevelEl) hudLevelEl.textContent = String(level);
               if (hudXpEl) hudXpEl.textContent = `${xpVal}/${xpNeed}`;
@@ -975,12 +1112,87 @@
             continue;
           }
           ctx.save();
-          const a = Math.max(0, e.ttl / 220);
-          ctx.globalAlpha = a;
-          ctx.strokeStyle = "#ffd54f";
+          ctx.globalAlpha = e.ttl / 220;
+          ctx.fillStyle = "#ff6b35";
           ctx.beginPath();
-          ctx.arc(e.x, e.y, (1 - a) * 12 + 2, 0, Math.PI * 2);
-          ctx.stroke();
+          ctx.arc(e.x, e.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Damage numbers - clean up old ones first
+        const now = Date.now();
+        
+        // Remove damage numbers older than server timestamp or animation time
+        for (let i = damageNumbers.length - 1; i >= 0; i--) {
+          const dn = damageNumbers[i];
+          const age = now - dn.startTime;
+          const maxAge = 1500; // 1.5 seconds
+          const serverAge = now - dn.timestamp;
+          
+          // Remove if animation is done OR if server timestamp is too old
+          if (age > maxAge || serverAge > 2000) {
+            damageNumbers.splice(i, 1);
+            continue;
+          }
+        }
+        
+        // Render remaining damage numbers
+        for (let i = damageNumbers.length - 1; i >= 0; i--) {
+          const dn = damageNumbers[i];
+          const age = now - dn.startTime;
+          const maxAge = 1500; // 1.5 seconds
+          
+          // Update position to follow target entity
+          let renderX = dn.initialX;
+          let renderY = dn.initialY;
+          
+          if (dn.targetId) {
+            if (dn.isAI) {
+              // Follow AI zombie
+              const zombie = state.aiZombies?.find(z => z.id === dn.targetId);
+              if (zombie) {
+                renderX = zombie.x;
+                renderY = zombie.y - 15; // Slightly above the zombie
+              }
+            } else {
+              // Follow player
+              const player = state.players.find(p => p.id === dn.targetId);
+              if (player) {
+                renderX = player.x;
+                renderY = player.y - 15; // Slightly above the player
+              }
+            }
+          }
+          
+          // Animation: float up and fade out
+          const progress = age / maxAge;
+          const alpha = Math.max(0, 1 - progress * progress); // Quadratic fade
+          const offsetY = -progress * 60; // Float up 60 pixels
+          
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          // Different styles for different damage types
+          if (dn.isCrit) {
+            ctx.font = 'bold 18px monospace';
+            ctx.fillStyle = '#ff4444';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.strokeText(dn.damage.toString(), renderX, renderY + offsetY);
+            ctx.fillText(dn.damage.toString(), renderX, renderY + offsetY);
+          } else if (dn.isDot) {
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#88ff44';
+            ctx.fillText(dn.damage.toString(), renderX, renderY + offsetY);
+          } else {
+            ctx.font = '14px monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(dn.damage.toString(), renderX, renderY + offsetY);
+          }
+          
           ctx.restore();
         }
         // AI Zombies

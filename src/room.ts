@@ -167,6 +167,8 @@ export class RoomDO {
   maxAIZombies = CONFIG.aiZombies.maxCount;
   aiZombieSpawnCooldown = CONFIG.aiZombies.spawnCooldownMs;
   lastAIZombieSpawn = 0;
+  // Damage numbers for visual feedback
+  damageNumbers: Array<{id: string; x: number; y: number; damage: number; isCrit: boolean; isDot: boolean; timestamp: number}> = [];
   // Tilemap state
   map: { w:number; h:number; size:number; theme: 'dungeon'|'cave'|'lab'; tiles: Uint8Array; lights: {x:number;y:number;r:number;a:number}[]; props:{x:number;y:number;type:'crate'|'pillar'|'bonepile'}[]; rooms:{x:number;y:number;w:number;h:number}[] } | null = null;
 
@@ -556,6 +558,8 @@ export class RoomDO {
       if (dist <= radius) {
         const dmg = Math.round(damage * (1 - dist / radius)); // Falloff damage
         z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - dmg);
+        // Add damage number
+        this.addDamageNumber(z.pos.x, z.pos.y, dmg, false, false);
         if ((z.zHp ?? 0) <= 0) {
           z.alive = false;
           this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
@@ -570,6 +574,8 @@ export class RoomDO {
       if (dist <= radius) {
         const dmg = Math.round(damage * (1 - dist / radius));
         z.hp = Math.max(0, z.hp - dmg);
+        // Add damage number for AI zombies
+        this.addDamageNumber(z.pos.x, z.pos.y, dmg, false, false);
       }
     }
     this.broadcast('notice', { message: '💥 Explosive death!' });
@@ -683,6 +689,14 @@ export class RoomDO {
     
     // Create explosion effect
     this.broadcast('explosion', { x: bomber.pos.x, y: bomber.pos.y, radius, damage });
+  }
+  
+  addDamageNumber(x: number, y: number, damage: number, isCrit: boolean = false, isDot: boolean = false) {
+    this.damageNumbers.push({
+      id: crypto.randomUUID().slice(0, 6),
+      x, y, damage, isCrit, isDot,
+      timestamp: Date.now()
+    });
   }
 
   update() {
@@ -851,6 +865,8 @@ export class RoomDO {
             if (p.role === 'streamer') {
               const damage = 8; // Moderate damage
               p.hp = Math.max(0, (p.hp ?? this.cfg.streamer.maxHp) - damage);
+              // Add damage number for spikes
+              this.addDamageNumber(p.pos.x, p.pos.y, damage, false, true);
               this.broadcast("notice", { message: "🗡️ Stepped on spikes! Taking damage..." });
               (p as any).lastSpikeDamage = now;
               if ((p.hp ?? 0) <= 0) {
@@ -861,6 +877,8 @@ export class RoomDO {
             } else {
               const damage = 5;
               p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - damage);
+              // Add damage number for zombie on spikes
+              this.addDamageNumber(p.pos.x, p.pos.y, damage, false, true);
               (p as any).lastSpikeDamage = now;
               if ((p.zHp ?? 0) <= 0) {
                 p.alive = false; 
@@ -889,6 +907,8 @@ export class RoomDO {
             if (p.role === 'streamer') {
               const damage = 6; // Moderate damage
               p.hp = Math.max(0, (p.hp ?? this.cfg.streamer.maxHp) - damage);
+              // Add damage number for poison
+              this.addDamageNumber(p.pos.x, p.pos.y, damage, false, true);
               const lastPoisonToast = (p as any).lastPoisonToast || 0;
               if (now - lastPoisonToast > 3000) {
                 this.broadcast("notice", { message: "☠️ Poison pool! Taking damage and slowed..." });
@@ -903,6 +923,8 @@ export class RoomDO {
             } else {
               const damage = 4;
               p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - damage);
+              // Add damage number for zombie in poison
+              this.addDamageNumber(p.pos.x, p.pos.y, damage, false, true);
               (p as any).lastPoisonDamage = now;
               if ((p.zHp ?? 0) <= 0) {
                 p.alive = false; 
@@ -1094,7 +1116,10 @@ export class RoomDO {
             const dot = (dx/dist||0)*nx + (dy/dist||0)*ny;
             if (dot > Math.cos(this.cfg.melee.arcRad)) {
               // Apply melee damage from config
-              z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - this.cfg.weapons.damage.melee);
+              const damage = this.cfg.weapons.damage.melee;
+              z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - damage);
+              // Add damage number for melee
+              this.addDamageNumber(z.pos.x, z.pos.y, damage, false, false);
               if ((z.zHp ?? 0) <= 0) {
                 z.alive = false;
                 // Drop ammo on zombie death
@@ -1150,6 +1175,8 @@ export class RoomDO {
           const crit = Math.random() < (b.meta.critChance || 0);
           const dealt = Math.max(0, Math.round(base * (crit ? (b.meta.critMul || 1) : 1)));
           p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - dealt);
+          // Add damage number for bullet hit
+          this.addDamageNumber(p.pos.x, p.pos.y, dealt, crit, false);
           const owner = this.players.get(b.ownerId);
           const ownerStats = owner ? statsFor(owner).s : undefined;
           // Lifesteal on hit
@@ -1245,6 +1272,8 @@ export class RoomDO {
             const crit = Math.random() < (b.meta.critChance || 0);
             const dealt = Math.max(0, Math.round(base * (crit ? (b.meta.critMul || 1) : 1)));
             zombie.hp = Math.max(0, zombie.hp - dealt);
+            // Add damage number for bullet hit on AI zombie
+            this.addDamageNumber(zombie.pos.x, zombie.pos.y, dealt, crit, false);
             const owner = this.players.get(b.ownerId);
             const ownerStats = owner ? statsFor(owner).s : undefined;
             // Lifesteal
@@ -1442,6 +1471,8 @@ export class RoomDO {
               if (z.role !== "zombie" || !z.alive) continue;
               if (Math.hypot(z.pos.x - pl.pos.x, z.pos.y - pl.pos.y) <= radius){
                 z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - 100);
+                // Add damage number for blast hit on zombie
+                this.addDamageNumber(z.pos.x, z.pos.y, 100, false, false);
                 if ((z.zHp ?? 0) <= 0) {
                   z.alive = false;
                   zombiesHit++;
@@ -1840,6 +1871,8 @@ export class RoomDO {
     
     if ((streamer.hp ?? this.cfg.streamer.maxHp) > 0) {
       streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - this.cfg.combat.zombieTouchDamage);
+      // Add damage number for zombie hit on streamer
+      this.addDamageNumber(streamer.pos.x, streamer.pos.y, this.cfg.combat.zombieTouchDamage, false, false);
     }
     
     if ((streamer.hp ?? 0) <= 0) {
@@ -1859,6 +1892,10 @@ export class RoomDO {
   }
 
   broadcastState() {
+    // Clean up old damage numbers (older than 1 second to prevent duplicates)
+    const now = Date.now();
+    this.damageNumbers = this.damageNumbers.filter(dn => now - dn.timestamp < 1000);
+
     const snapshot = {
       type: "state",
       t: Date.now(),
@@ -1877,6 +1914,15 @@ export class RoomDO {
         state: z.state,
         detectionRange: z.detectionRange,
         chaseRange: z.chaseRange
+      })),
+      damageNumbers: this.damageNumbers.map(dn => ({
+        id: dn.id,
+        x: dn.x,
+        y: dn.y,
+        damage: dn.damage,
+        isCrit: dn.isCrit,
+        isDot: dn.isDot,
+        timestamp: dn.timestamp
       })),
       arena: { w: this.W, h: this.H },
       remainingTime: Math.max(0, Math.floor(((this.roundEndTime || Date.now()) - Date.now()) / 1000)),
@@ -1971,6 +2017,8 @@ export class RoomDO {
       if (z.role !== 'zombie' || !z.alive) continue;
       if (Math.hypot(z.pos.x - b.pos.x, z.pos.y - b.pos.y) <= radius) {
         z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - Math.round((b.meta?.damage||20) * 0.5));
+        // Add damage number for explosion hit on zombie
+        this.addDamageNumber(z.pos.x, z.pos.y, Math.round((b.meta?.damage||20) * 0.5), false, false);
         if ((z.zHp ?? 0) <= 0) {
           z.alive = false;
           this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
@@ -2172,56 +2220,76 @@ export class RoomDO {
     while (remaining > 0 && damage > 0) {
       let best: { isAI:boolean; p?: Player; a?: AIZombie; id:string; x:number; y:number } | null = null;
       let bestD = Infinity;
+      
+      // Check player zombies
       for (const z of this.players.values()){
         if (z.role !== 'zombie' || !z.alive) continue;
         if (visited.has(z.id)) continue;
         const d = Math.hypot(z.pos.x - pos.x, z.pos.y - pos.y);
-        if (d < range && d < bestD) { bestD = d; best = { isAI:false, p:z, id:z.id, x:z.pos.x, y:z.pos.y }; }
-      }
-      for (const z of this.aiZombies){
-        const zid = 'ai:'+z.id; if (visited.has(zid)) continue;
-        const d = Math.hypot(z.pos.x - pos.x, z.pos.y - pos.y);
-        if (d < range && d < bestD) { bestD = d; best = { isAI:true, a:z, id:zid, x:z.pos.x, y:z.pos.y }; }
-      }
-      if (!best) break;
-      visited.add(best.id);
-      if (best.isAI && best.a) {
-        best.a.hp = Math.max(0, best.a.hp - damage);
-        // Reward owner per hit
-        const owner = this.players.get(b.ownerId);
-        if (owner && owner.role==='streamer') {
-          owner.score += 1;
-          owner.xp = (owner.xp||0) + XP_PER_KILL;
-          const need = XP_THRESHOLDS(owner.level||0);
-          if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+        if (d < range && d < bestD) { 
+          bestD = d; 
+          best = { isAI: false, p: z, id: z.id, x: z.pos.x, y: z.pos.y }; 
         }
-        if (best.a.hp <= 0) {
-          const owner = this.players.get(b.ownerId);
-          const s = owner ? statsFor(owner).s : undefined;
-          if (owner && s && s.reloadOnKillPct>0 && owner.role==='streamer') this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+      }
+      
+      // Check AI zombies
+      for (const z of this.aiZombies) {
+        const zid = 'ai:' + z.id; 
+        if (visited.has(zid)) continue;
+        const d = Math.hypot(z.pos.x - pos.x, z.pos.y - pos.y);
+        if (d < range && d < bestD) { 
+          bestD = d; 
+          best = { isAI: true, a: z, id: zid, x: z.pos.x, y: z.pos.y }; 
+        }
+      }
+      
+      if (!best) break;
+      
+      // Apply damage and show damage number
+      if (best.isAI && best.a) {
+        // AI zombie hit
+        best.a.hp = Math.max(0, best.a.hp - damage);
+        this.addDamageNumber(best.a.pos.x, best.a.pos.y, damage, false, false);
+        
+        // Reward owner
+        const owner = this.players.get(b.ownerId);
+        if (owner && owner.role === 'streamer') {
+          owner.score += 1;
+          owner.xp = (owner.xp || 0) + XP_PER_KILL;
+          const need = XP_THRESHOLDS(owner.level || 0);
+          if ((owner.xp || 0) >= need) { 
+            owner.xp -= need; 
+            owner.level = (owner.level || 0) + 1; 
+            this.offerUpgrades(owner.id); 
+          }
+          
+          // Refund ammo if applicable
+          const s = statsFor(owner).s;
+          if (s && s.reloadOnKillPct > 0) {
+            this.refundAmmoOnKill(owner, s.reloadOnKillPct);
+          }
         }
       } else if (!best.isAI && best.p) {
+        // Player zombie hit
         best.p.zHp = Math.max(0, (best.p.zHp ?? this.cfg.zombies.baseHp) - damage);
+        this.addDamageNumber(best.p.pos.x, best.p.pos.y, damage, false, false);
+        
+        // Handle zombie death
         if ((best.p.zHp ?? 0) <= 0) {
           best.p.alive = false;
-          this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: best.p.pos.x, y: best.p.pos.y });
-          const id = best.p.id;
-          setTimeout(()=>{ const zp=this.players.get(id); if (zp){ zp.pos=this.spawnZombiePos(); zp.alive=true; zp.zHp=zp.zMaxHp; } }, this.cfg.combat.respawnMs);
-          const owner = this.players.get(b.ownerId);
-          const s = owner ? statsFor(owner).s : undefined;
-          if (owner && s && s.reloadOnKillPct>0 && owner.role==='streamer') this.refundAmmoOnKill(owner, s.reloadOnKillPct);
-        }
-        const owner = this.players.get(b.ownerId);
-        if (owner && owner.role==='streamer') {
-          owner.score += 1;
-          owner.xp = (owner.xp||0) + XP_PER_KILL;
-          const need = XP_THRESHOLDS(owner.level||0);
-          if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
+          // Respawn logic would go here if needed
         }
       }
-      pos = { x: best.x, y: best.y };
-      remaining -= 1;
-      damage = Math.floor(damage * 0.7);
+      
+      // Update position and reduce damage for next bounce
+      if (best) {
+        visited.add(best.id);
+        pos = { x: best.x, y: best.y };
+        remaining -= 1;
+        damage = Math.floor(damage * 0.7);
+      } else {
+        break;
+      }
     }
   }
 
