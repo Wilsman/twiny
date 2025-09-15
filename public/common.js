@@ -34,19 +34,37 @@ export function minimalCanvas(w, h) {
 
   // DPI-aware internal resolution
   const resize = () => {
-    // Fit canvas to parent (stage) while maintaining aspect ratio and avoiding overflow
+    // Force a reflow to ensure accurate measurements
     const parent = c.parentElement || document.body;
+    parent.offsetHeight; // Force reflow
+    
+    // Get fresh parent dimensions
     const prect = parent.getBoundingClientRect();
+    
+    // Add padding to prevent overflow issues after fullscreen
+    const padding = 20;
+    const availableWidth = Math.max(100, prect.width - padding);
+    const availableHeight = Math.max(100, prect.height - padding);
+    
+    // Fit canvas to available space while maintaining aspect ratio
     const targetAR = w / h;
-    let cssW = prect.width;
+    let cssW = availableWidth;
     let cssH = cssW / targetAR;
-    if (cssH > prect.height) {
-      cssH = prect.height;
+    if (cssH > availableHeight) {
+      cssH = availableHeight;
       cssW = cssH * targetAR;
     }
+    
+    // Ensure minimum size
+    cssW = Math.max(200, cssW);
+    cssH = Math.max(200 / targetAR, cssH);
+    
     c.style.width = cssW + 'px';
     c.style.height = cssH + 'px';
 
+    // Force another reflow after setting canvas size
+    c.offsetHeight;
+    
     const rect = c.getBoundingClientRect();
     const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
     const targetW = Math.max(1, Math.floor(rect.width * dpr));
@@ -60,6 +78,46 @@ export function minimalCanvas(w, h) {
   roCanvas.observe(c);
   roParent.observe(stage);
   window.addEventListener('orientationchange', resize);
+  
+  // Handle fullscreen changes with forced recalculation
+  const handleFullscreenChange = () => {
+    // Clear any cached dimensions and force recalculation
+    c.style.width = '';
+    c.style.height = '';
+    
+    // Multiple resize attempts with increasing delays
+    setTimeout(() => {
+      c.style.width = '';
+      c.style.height = '';
+      resize();
+    }, 50);
+    setTimeout(() => {
+      c.style.width = '';
+      c.style.height = '';
+      resize();
+    }, 150);
+    setTimeout(() => {
+      c.style.width = '';
+      c.style.height = '';
+      resize();
+    }, 300);
+    setTimeout(() => {
+      c.style.width = '';
+      c.style.height = '';
+      resize();
+    }, 500);
+    
+    // Force a window resize event to trigger all resize handlers
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 100);
+  };
+  
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+  document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+  
   resize();
 
   // Capture keyboard focus so Space/Arrows don't trigger buttons/scroll

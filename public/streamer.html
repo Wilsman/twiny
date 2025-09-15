@@ -172,6 +172,19 @@
         updateHudPosition();
         window.addEventListener('resize', updateHudPosition);
         
+        // Handle fullscreen changes for HUD positioning with multiple attempts
+        const handleHudFullscreenChange = () => {
+          setTimeout(updateHudPosition, 50);
+          setTimeout(updateHudPosition, 150);
+          setTimeout(updateHudPosition, 300);
+          setTimeout(updateHudPosition, 500);
+        };
+        
+        document.addEventListener('fullscreenchange', handleHudFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleHudFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleHudFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleHudFullscreenChange);
+        
         // Also update when canvas size changes
         const resizeObserver = new ResizeObserver(updateHudPosition);
         resizeObserver.observe(c);
