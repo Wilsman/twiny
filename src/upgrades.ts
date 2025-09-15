@@ -9,11 +9,14 @@ export function baseStats(): StatBlock {
   return {
     damageMul: 1, fireRateMul: 1, projectileSpeedMul: 1,
     bulletSizeMul: 1, spreadMul: 1, knockbackMul: 1,
-    critChance: 0, critMul: 1.5,
-    pierce: 0, bounce: 0, ricochet: 0, split: 0, chain: 0,
-    burnChance:0,burnDps:0,burnMs:0, slowChance:0,slowMul:1,slowMs:0, bleedChance:0,bleedDps:0,bleedMs:0,
-    reloadOnKillPct: 0, lifestealPct: 0, ammoEfficiencyMul: 1,
-    magnetBonus: 0, dashReloadPct: 0,
+    critChance: 0, critMul: 1.5, pierce: 0, bounce: 0, ricochet: 0, split: 0, chain: 0,
+    burnChance: 0, burnDps: 0, burnMs: 0,
+    slowChance: 0, slowMul: 1, slowMs: 0,
+    bleedChance: 0, bleedDps: 0, bleedMs: 0,
+    reloadOnKillPct: 0, lifestealPct: 0, ammoEfficiencyMul: 1, magnetBonus: 0, dashReloadPct: 0,
+    // New stats for advanced upgrades
+    movementSpeedMul: 1, dashDistanceMul: 1, ghostWalkMs: 0, berserkerStacks: 0,
+    vampireAuraRange: 0, timeDilationMs: 0, bulletTimeMs: 0, explosiveDeathDamage: 0, shieldRegenRate: 0
   };
 }
 
@@ -73,6 +76,28 @@ export const MODS: ModDef[] = [
     apply:(s,k)=>{ s.ammoEfficiencyMul *= Math.pow(0.9, k); } },
   { id:'magnet_radius', name:'Loot Vacuum', rarity:'common', desc:'+40px pickup radius UI hint.',
     apply:(s,k)=>{ s.magnetBonus += 40*k; } },
+  
+  // New fun upgrades
+  { id:'movement_speed', name:'Swift Feet', rarity:'common', desc:'+25% movement speed.',
+    apply:(s,k)=>{ s.movementSpeedMul *= Math.pow(1.25, k); } },
+  { id:'dash_distance', name:'Long Dash', rarity:'uncommon', desc:'+50% dash distance.',
+    apply:(s,k)=>{ s.dashDistanceMul *= Math.pow(1.5, k); } },
+  { id:'double_jump', name:'Air Walker', rarity:'rare', desc:'Dash resets on kill (simulates double jump).',
+    hooks:{ onKill: ({room,killerId}) => { const p = (room as any).players?.get(killerId); if (p) p.lastDashAt = 0; } } },
+  { id:'ghost_walk', name:'Phase Step', rarity:'epic', desc:'Brief invulnerability after dash (0.5s).',
+    apply:(s,k)=>{ s.ghostWalkMs += 500*k; } },
+  { id:'berserker', name:'Berserker Rage', rarity:'rare', desc:'+10% damage per recent kill (max 5 stacks).',
+    apply:(s,k)=>{ s.berserkerStacks += 5*k; } },
+  { id:'vampire_aura', name:'Blood Aura', rarity:'epic', desc:'Heal from nearby zombie deaths (+50px range).',
+    apply:(s,k)=>{ s.vampireAuraRange += 50*k; } },
+  { id:'time_dilation', name:'Bullet Time', rarity:'legendary', desc:'Slow time on low health (2s duration).',
+    apply:(s,k)=>{ s.timeDilationMs += 2000*k; } },
+  { id:'bullet_time', name:'Matrix Mode', rarity:'legendary', desc:'Slow projectiles when dashing (1s).',
+    apply:(s,k)=>{ s.bulletTimeMs += 1000*k; } },
+  { id:'explosive_death', name:'Martyrdom', rarity:'rare', desc:'Explode on death dealing 50 damage.',
+    apply:(s,k)=>{ s.explosiveDeathDamage += 50*k; } },
+  { id:'shield_regen', name:'Auto-Repair', rarity:'uncommon', desc:'Regenerate 1 HP every 3 seconds.',
+    apply:(s,k)=>{ s.shieldRegenRate += k; } },
 ];
 
 export const MOD_INDEX: Record<ModId, ModDef> = Object.fromEntries(MODS.map(m=>[m.id,m])) as any;

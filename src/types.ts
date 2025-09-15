@@ -7,7 +7,10 @@ export type ModId =
   | 'status_slow' | 'status_bleed'
   | 'shotgun_extra_pellet' | 'smg_stability' | 'pistol_precision'
   | 'dash_reload' | 'on_hit_explode' | 'chain_lightning'
-  | 'magnet_radius' | 'on_extract_refund' | 'ammo_efficiency';
+  | 'magnet_radius' | 'on_extract_refund' | 'ammo_efficiency'
+  | 'movement_speed' | 'dash_distance' | 'double_jump' | 'ghost_walk'
+  | 'berserker' | 'vampire_aura' | 'time_dilation' | 'bullet_time'
+  | 'explosive_death' | 'shield_regen';
 
 export type Rarity = 'common'|'uncommon'|'rare'|'epic'|'legendary';
 
@@ -45,6 +48,16 @@ export interface StatBlock {
   ammoEfficiencyMul: number; // <1 means cheaper per shot
   magnetBonus: number;       // +px to pickup range (client hint only)
   dashReloadPct: number;
+  // New stats for advanced upgrades
+  movementSpeedMul: number;  // movement speed multiplier
+  dashDistanceMul: number;   // dash distance multiplier
+  ghostWalkMs: number;       // ghost walk duration
+  berserkerStacks: number;   // berserker damage stacks
+  vampireAuraRange: number;  // vampire aura range
+  timeDilationMs: number;    // time dilation duration
+  bulletTimeMs: number;      // bullet time duration
+  explosiveDeathDamage: number; // explosive death damage
+  shieldRegenRate: number;   // shield regeneration rate
 }
 
 export interface ModHooks {
@@ -102,3 +115,5 @@ export interface BulletSpawnSpec {
   };
 }
 export type ActiveBullet = BulletSpawnSpec & { id: string };
+
+export type ZombieClass = "runner" | "brute" | "spitter" | "stalker" | "bomber";

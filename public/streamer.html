@@ -205,6 +205,7 @@
       const buffPanel = document.getElementById("buffPanel");
       const buffListEl = document.getElementById("buffList");
       const hudScoreEl = document.getElementById("hudScore");
+      const upgradeQueue = [];
       const hudBankedEl = document.getElementById("hudBanked");
       const hudWeaponEl = document.getElementById("hudWeapon");
       const hudAmmoEl = document.getElementById("hudAmmo");
@@ -221,25 +222,42 @@
       const overlay = document.getElementById('upgradeOverlay');
       const choiceEls = Array.from(overlay.querySelectorAll('.choice'));
       let currentChoices = [];
-      function showUpgrades(choices){
-        currentChoices = choices || [];
+
+      function showNextUpgrade() {
+        if (!upgradeQueue.length) {
+          currentChoices = [];
+          choiceEls.forEach((el) => { el.textContent = ''; el.disabled = true; });
+          overlay.classList.add('hidden');
+          return;
+        }
+        currentChoices = upgradeQueue.shift();
         choiceEls.forEach((el, i) => {
-          const c = currentChoices[i];
-          if (!c) { el.textContent = ''; el.disabled = true; return; }
+          const choice = currentChoices[i];
+          if (!choice) { el.textContent = ''; el.disabled = true; return; }
           el.disabled = false;
-          el.textContent = `${i+1}) ${c.name} - ${c.desc}`;
+          el.textContent = `${i + 1}) ${choice.name} - ${choice.desc}`;
         });
         overlay.classList.remove('hidden');
       }
-      function pickUpgrade(index){
-        const c = currentChoices[index];
-        if (!c || !ws) return;
-        try { ws.send(JSON.stringify({ type:'choose_upgrade', id: c.id })); } catch {}
-        overlay.classList.add('hidden');
-        currentChoices = [];
+
+      function queueUpgrade(choices) {
+        const normalized = Array.isArray(choices) ? choices.filter(Boolean) : [];
+        if (!normalized.length) return;
+        upgradeQueue.push(normalized);
+        if (overlay.classList.contains('hidden') && currentChoices.length === 0) {
+          showNextUpgrade();
+        }
       }
-      choiceEls.forEach((el,i)=> el.addEventListener('click', ()=> pickUpgrade(i)) );
-      window.addEventListener('keydown', (e)=>{
+
+      function pickUpgrade(index) {
+        const choice = currentChoices[index];
+        if (!choice || !ws) return;
+        try { ws.send(JSON.stringify({ type: 'choose_upgrade', id: choice.id })); } catch {}
+        showNextUpgrade();
+      }
+
+      choiceEls.forEach((el, i) => el.addEventListener('click', () => pickUpgrade(i)));
+      window.addEventListener('keydown', (e) => {
         if (overlay.classList.contains('hidden')) return;
         if (e.key === '1') pickUpgrade(0);
         if (e.key === '2') pickUpgrade(1);
@@ -489,7 +507,7 @@
             appendChat("System", msg.message);
           }
           if (msg.type === 'upgrade_offer') {
-            showUpgrades(msg.choices || []);
+            queueUpgrade(msg.choices || []);
           }
         });
         inputIv = setInterval(() => {
@@ -986,8 +1004,14 @@
             } else if (zombie.zClass === "spitter") {
               ctx.strokeStyle = "#ba68c8";
               ctx.lineWidth = 2;
+            } else if (zombie.zClass === "stalker") {
+              ctx.strokeStyle = "#9c27b0";
+              ctx.lineWidth = 2;
+            } else if (zombie.zClass === "bomber") {
+              ctx.strokeStyle = "#f44336";
+              ctx.lineWidth = 2.5;
             } else {
-              ctx.strokeStyle = "#e57373";
+              ctx.strokeStyle = "#666";
               ctx.lineWidth = 1;
             }
             ctx.globalAlpha = 0.9;
@@ -1135,6 +1159,12 @@
             } else if (p.zClass === "spitter") {
               ctx.strokeStyle = "#ba68c8";
               ctx.lineWidth = 2;
+            } else if (p.zClass === "stalker") {
+              ctx.strokeStyle = "#9c27b0";
+              ctx.lineWidth = 2;
+            } else if (p.zClass === "bomber") {
+              ctx.strokeStyle = "#f44336";
+              ctx.lineWidth = 2.5;
             } else {
               ctx.strokeStyle = "#e57373";
               ctx.lineWidth = 1;
@@ -1792,5 +1822,6 @@
     </script>
   </body>
 </html>
+
 
 

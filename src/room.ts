@@ -76,7 +76,7 @@ interface Player {
   inputBuffer?: Array<{input: Input, timestamp: number}>;
   lastInputTime?: number;
   // Zombie class fields
-  zClass?: "runner" | "brute" | "spitter";
+  zClass?: "runner" | "brute" | "spitter" | "stalker" | "bomber";
   zHp?: number;
   zMaxHp?: number;
   nextSpitAt?: number;
@@ -89,6 +89,13 @@ interface Player {
   slowMul?: number;
   burns?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
   bleeds?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
+  // New zombie abilities
+  cloaked?: boolean;
+  cloakUntil?: number;
+  uncloakUntil?: number;
+  fuseStarted?: number;
+  fuseUntil?: number;
+  lastShieldRegen?: number;
 }
 
 import { XP_PER_KILL, XP_THRESHOLDS, rollChoices, MOD_INDEX, statsFor, statusFrom } from './upgrades';
@@ -109,7 +116,7 @@ interface AIZombie {
   vel: Vec;
   hp: number;
   maxHp: number;
-  zClass: "runner" | "brute" | "spitter";
+  zClass: "runner" | "brute" | "spitter" | "stalker" | "bomber";
   state: "idle" | "chasing" | "attacking";
   targetId?: string;
   lastSeen: number;
@@ -124,6 +131,12 @@ interface AIZombie {
   slowMul?: number;
   burns?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
   bleeds?: Array<{ until:number; dps:number; nextTick:number; ownerId:string }>;
+  // New zombie abilities
+  cloaked?: boolean;
+  cloakUntil?: number;
+  uncloakUntil?: number;
+  fuseStarted?: number;
+  fuseUntil?: number;
 }
 
 import { CONFIG, TileId, type GameConfig } from './config';
@@ -493,8 +506,183 @@ export class RoomDO {
   onClose(pid: string) {
     const p = this.players.get(pid);
     if (!p) return;
+    // Handle explosive death upgrade
+    if (p.role === 'streamer' && p.mods) {
+      const { s } = statsFor(p);
+      if (s.explosiveDeathDamage > 0) {
+        this.createExplosion(p.pos.x, p.pos.y, s.explosiveDeathDamage, 60, p.id);
+      }
+    }
     this.players.delete(pid);
     this.broadcast("players_update", { players: [...this.players.values()].map(this.publicPlayer) });
+  }
+
+  processUpgradeEffects(now: number) {
+    for (const p of this.players.values()) {
+      if (p.role !== 'streamer' || !p.mods) continue;
+      const { s } = statsFor(p);
+      
+      // Shield regeneration (auto-repair)
+      if (s.shieldRegenRate > 0) {
+        if (!p.lastShieldRegen || now - p.lastShieldRegen >= 3000) {
+          if ((p.hp ?? 0) < (p.maxHp ?? this.cfg.streamer.maxHp)) {
+            p.hp = Math.min((p.maxHp ?? this.cfg.streamer.maxHp), (p.hp ?? 0) + 1);
+            p.lastShieldRegen = now;
+          }
+        }
+      }
+      
+      // Time dilation (bullet time when low health)
+      if (s.timeDilationMs > 0) {
+        const healthPct = (p.hp || 0) / (p.maxHp || this.cfg.streamer.maxHp);
+        if (healthPct <= 0.25 && !((p as any).timeDilationUntil > now)) {
+          (p as any).timeDilationUntil = now + s.timeDilationMs;
+          this.broadcast('notice', { message: '⏰ Time slows as death approaches...' });
+        }
+      }
+      
+      // Bullet time during dash
+      if (s.bulletTimeMs > 0 && (p.dashUntil || 0) > now) {
+        (p as any).bulletTimeUntil = Math.max((p as any).bulletTimeUntil || 0, now + s.bulletTimeMs);
+      }
+    }
+  }
+  
+  createExplosion(x: number, y: number, damage: number, radius: number, ownerId: string) {
+    // Damage all zombies in radius
+    for (const z of this.players.values()) {
+      if (z.role !== 'zombie' || !z.alive) continue;
+      const dist = Math.hypot(z.pos.x - x, z.pos.y - y);
+      if (dist <= radius) {
+        const dmg = Math.round(damage * (1 - dist / radius)); // Falloff damage
+        z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - dmg);
+        if ((z.zHp ?? 0) <= 0) {
+          z.alive = false;
+          this.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: z.pos.x, y: z.pos.y });
+          const id = z.id;
+          setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, this.cfg.combat.respawnMs);
+        }
+      }
+    }
+    // Damage AI zombies
+    for (const z of this.aiZombies) {
+      const dist = Math.hypot(z.pos.x - x, z.pos.y - y);
+      if (dist <= radius) {
+        const dmg = Math.round(damage * (1 - dist / radius));
+        z.hp = Math.max(0, z.hp - dmg);
+      }
+    }
+    this.broadcast('notice', { message: '💥 Explosive death!' });
+  }
+  
+  processZombieAbilities(now: number) {
+    // Process player zombies
+    for (const z of this.players.values()) {
+      if (z.role !== 'zombie' || !z.alive) continue;
+      
+      // Stalker cloaking mechanics
+      if (z.zClass === 'stalker') {
+        if (!z.cloakUntil) {
+          z.cloakUntil = now + this.cfg.zombies.stalker.cloakDurationMs;
+          z.cloaked = true;
+        } else if (z.cloakUntil < now && z.cloaked) {
+          z.cloaked = false;
+          z.uncloakUntil = now + this.cfg.zombies.stalker.uncloakDurationMs;
+        } else if (z.uncloakUntil && z.uncloakUntil < now) {
+          z.cloakUntil = now + this.cfg.zombies.stalker.cloakDurationMs;
+          z.cloaked = true;
+          z.uncloakUntil = undefined;
+        }
+      }
+      
+      // Bomber fuse mechanics
+      if (z.zClass === 'bomber' && z.zHp && z.zHp <= (z.zMaxHp || 100) * 0.3) {
+        if (!z.fuseStarted) {
+          z.fuseStarted = now;
+          z.fuseUntil = now + this.cfg.zombies.bomber.fuseTimeMs;
+          this.broadcast('notification', { message: `Bomber ${z.name} is about to explode!` });
+        }
+        
+        if (z.fuseUntil && now >= z.fuseUntil) {
+          this.bomberExplode(z, now);
+        }
+      }
+    }
+    
+    // Process AI zombies
+    for (const z of this.aiZombies) {
+      // Stalker cloaking for AI
+      if (z.zClass === 'stalker') {
+        if (!z.cloakUntil) {
+          z.cloakUntil = now + this.cfg.zombies.stalker.cloakDurationMs;
+          z.cloaked = true;
+        } else if (z.cloakUntil < now && z.cloaked) {
+          z.cloaked = false;
+          z.uncloakUntil = now + this.cfg.zombies.stalker.uncloakDurationMs;
+        } else if (z.uncloakUntil && z.uncloakUntil < now) {
+          z.cloakUntil = now + this.cfg.zombies.stalker.cloakDurationMs;
+          z.cloaked = true;
+          z.uncloakUntil = undefined;
+        }
+      }
+      
+      // Bomber fuse for AI
+      if (z.zClass === 'bomber' && z.hp <= z.maxHp * 0.3) {
+        if (!z.fuseStarted) {
+          z.fuseStarted = now;
+          z.fuseUntil = now + this.cfg.zombies.bomber.fuseTimeMs;
+        }
+        
+        if (z.fuseUntil && now >= z.fuseUntil) {
+          this.bomberExplodeAI(z, now);
+        }
+      }
+    }
+  }
+  
+  bomberExplode(bomber: Player, now: number) {
+    const radius = this.cfg.zombies.bomber.explosionRadius;
+    const damage = this.cfg.zombies.bomber.explosionDamage;
+    
+    // Damage streamer if in range
+    const streamer = [...this.players.values()].find(p => p.role === 'streamer');
+    if (streamer) {
+      const dist = Math.hypot(bomber.pos.x - streamer.pos.x, bomber.pos.y - streamer.pos.y);
+      if (dist <= radius) {
+        const dmg = Math.round(damage * (1 - dist / radius));
+        streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - dmg);
+        this.broadcast('notification', { message: `Bomber explosion deals ${dmg} damage!` });
+      }
+    }
+    
+    // Kill the bomber
+    bomber.alive = false;
+    bomber.zHp = 0;
+    
+    // Create explosion effect
+    this.broadcast('explosion', { x: bomber.pos.x, y: bomber.pos.y, radius, damage });
+  }
+  
+  bomberExplodeAI(bomber: AIZombie, now: number) {
+    const radius = this.cfg.zombies.bomber.explosionRadius;
+    const damage = this.cfg.zombies.bomber.explosionDamage;
+    
+    // Damage streamer if in range
+    const streamer = [...this.players.values()].find(p => p.role === 'streamer');
+    if (streamer) {
+      const dist = Math.hypot(bomber.pos.x - streamer.pos.x, bomber.pos.y - streamer.pos.y);
+      if (dist <= radius) {
+        const dmg = Math.round(damage * (1 - dist / radius));
+        streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - dmg);
+      }
+    }
+    
+    // Remove the AI bomber
+    const idx = this.aiZombies.indexOf(bomber);
+    if (idx >= 0) this.aiZombies.splice(idx, 1);
+    
+    // Create explosion effect
+    this.broadcast('explosion', { x: bomber.pos.x, y: bomber.pos.y, radius, damage });
   }
 
   update() {
@@ -506,6 +694,12 @@ export class RoomDO {
         this.players.delete(id);
       }
     }
+
+    // Process upgrade effects
+    this.processUpgradeEffects(now);
+    
+    // Process zombie special abilities
+    this.processZombieAbilities(now);
 
     // Extractions removed
 
@@ -525,6 +719,11 @@ export class RoomDO {
         baseSpeed *= Math.max(0.05, p.slowMul || 1);
       }
       if (p.role === 'streamer' && ((p as any).gooSlowUntil || 0) > now) baseSpeed *= this.cfg.zombies.spitter.streamerSlowMul;
+      // Apply movement speed upgrades for streamer
+      if (p.role === 'streamer') {
+        const { s } = statsFor(p);
+        baseSpeed *= s.movementSpeedMul;
+      }
       const boosted = p.role === "zombie" && (p.boostUntil || 0) > now;
       let speed = boosted ? baseSpeed * this.cfg.speeds.zombieBoostMultiplier : baseSpeed;
       let vx = 0, vy = 0;
@@ -581,7 +780,15 @@ export class RoomDO {
         if (!p.input.dash && (p as any)._dashLatched) (p as any)._dashLatched = false;
         // Apply dash speed multiplier if active
         if ((p.dashUntil || 0) > nowMs) {
-          speed *= this.cfg.dash.speedMultiplier;
+          const { s } = statsFor(p);
+          speed *= this.cfg.dash.speedMultiplier * s.dashDistanceMul;
+          // Trigger dash reload upgrade
+          if (s.dashReloadPct > 0 && !((p as any).dashReloadTriggered)) {
+            this.refundAmmoOnKill(p, s.dashReloadPct);
+            (p as any).dashReloadTriggered = true;
+          }
+        } else {
+          (p as any).dashReloadTriggered = false;
         }
       }
       const moveSpeed = useCharge ? chargeSpeed : speed;
@@ -599,6 +806,8 @@ export class RoomDO {
         const isSolid = (tt:TileId)=> tt===1 || tt===4; // wall or doorClosed
         const isLethal = (tt:TileId)=> tt===2; // pit
         const isSlow = (tt:TileId)=> tt===3; // water/sludge
+        const isSpikes = (tt:TileId)=> tt===6; // spike trap
+        const isPoison = (tt:TileId)=> tt===7; // poison pool
         
         // Door interaction feedback for streamer
         if (p.role === 'streamer' && t === 4) {
@@ -632,6 +841,82 @@ export class RoomDO {
             nx = p.pos.x; ny = p.pos.y;
           } else {
             p.alive = false; const id=p.id; setTimeout(()=>{ const zp=this.players.get(id); if (zp) { zp.pos=this.spawnZombiePos(); zp.alive=true; } }, this.cfg.combat.respawnMs);
+          }
+        }
+        
+        // Spike trap - damage over time
+        if (isSpikes(t)) {
+          const lastSpikeDamage = (p as any).lastSpikeDamage || 0;
+          if (now - lastSpikeDamage > 500) { // Damage every 0.5 seconds
+            if (p.role === 'streamer') {
+              const damage = 8; // Moderate damage
+              p.hp = Math.max(0, (p.hp ?? this.cfg.streamer.maxHp) - damage);
+              this.broadcast("notice", { message: "🗡️ Stepped on spikes! Taking damage..." });
+              (p as any).lastSpikeDamage = now;
+              if ((p.hp ?? 0) <= 0) {
+                p.pos = this.spawnInRandomRoom();
+                p.hp = p.maxHp ?? this.cfg.streamer.maxHp;
+                nx = p.pos.x; ny = p.pos.y;
+              }
+            } else {
+              const damage = 5;
+              p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - damage);
+              (p as any).lastSpikeDamage = now;
+              if ((p.zHp ?? 0) <= 0) {
+                p.alive = false; 
+                const id = p.id; 
+                setTimeout(() => { 
+                  const zp = this.players.get(id); 
+                  if (zp) { 
+                    zp.pos = this.spawnZombiePos(); 
+                    zp.alive = true; 
+                    zp.zHp = zp.zMaxHp; 
+                  } 
+                }, this.cfg.combat.respawnMs);
+              }
+            }
+          }
+        }
+        
+        // Poison pool - damage and slow
+        if (isPoison(t)) {
+          // Apply slow effect
+          nx = p.pos.x + (p.vel.x * 0.4) * dt; 
+          ny = p.pos.y + (p.vel.y * 0.4) * dt;
+          
+          const lastPoisonDamage = (p as any).lastPoisonDamage || 0;
+          if (now - lastPoisonDamage > 1000) { // Damage every 1 second
+            if (p.role === 'streamer') {
+              const damage = 6; // Moderate damage
+              p.hp = Math.max(0, (p.hp ?? this.cfg.streamer.maxHp) - damage);
+              const lastPoisonToast = (p as any).lastPoisonToast || 0;
+              if (now - lastPoisonToast > 3000) {
+                this.broadcast("notice", { message: "☠️ Poison pool! Taking damage and slowed..." });
+                (p as any).lastPoisonToast = now;
+              }
+              (p as any).lastPoisonDamage = now;
+              if ((p.hp ?? 0) <= 0) {
+                p.pos = this.spawnInRandomRoom();
+                p.hp = p.maxHp ?? this.cfg.streamer.maxHp;
+                nx = p.pos.x; ny = p.pos.y;
+              }
+            } else {
+              const damage = 4;
+              p.zHp = Math.max(0, (p.zHp ?? this.cfg.zombies.baseHp) - damage);
+              (p as any).lastPoisonDamage = now;
+              if ((p.zHp ?? 0) <= 0) {
+                p.alive = false; 
+                const id = p.id; 
+                setTimeout(() => { 
+                  const zp = this.players.get(id); 
+                  if (zp) { 
+                    zp.pos = this.spawnZombiePos(); 
+                    zp.alive = true; 
+                    zp.zHp = zp.zMaxHp; 
+                  } 
+                }, this.cfg.combat.respawnMs);
+              }
+            }
           }
         }
       }
@@ -674,7 +959,13 @@ export class RoomDO {
         const d = Math.hypot(dirx, diry) || 1;
         const nx = dirx / d, ny = diry / d;
         const since = nowMs - (p.lastShotAt || 0);
-        const { s } = statsFor(p);
+        let { s } = statsFor(p);
+        // Apply berserker rage damage bonus
+        if (s.berserkerStacks > 0) {
+          const recentKills = ((p as any).berserkerKills || []).filter((t: number) => now - t <= 5000);
+          const stacks = Math.min(recentKills.length, s.berserkerStacks);
+          s = { ...s, damageMul: s.damageMul * (1 + stacks * 0.1) }; // 10% per stack
+        }
         if (weapon === "pistol") {
           const baseCd = boostedW ? this.cfg.weapons.cooldownMs.pistol.boosted : this.cfg.weapons.cooldownMs.pistol.base;
           const cd = baseCd / Math.max(0.01, s.fireRateMul);
@@ -865,7 +1156,7 @@ export class RoomDO {
           if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
             const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
             owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
-          }
+          };
           // Apply status effects
           if (b.meta.status) {
             const nowMs = now;
@@ -882,6 +1173,12 @@ export class RoomDO {
               p.bleeds.push({ until: nowMs + st.bleedMs, dps: st.bleedDps, nextTick: nowMs + 1000, ownerId: b.ownerId });
             }
           }
+          // Call onHit hooks
+          if (owner && owner.mods) {
+            for (const [id, n] of Object.entries(owner.mods)) {
+              (MOD_INDEX as any)[id]?.hooks?.onHit?.({ room: this as any, bullet: b, targetId: p.id, killed: false, stats: ownerStats || {} });
+            }
+          }
           let killed = false;
           if ((p.zHp ?? 0) <= 0) {
             p.alive = false; killed = true;
@@ -893,15 +1190,31 @@ export class RoomDO {
             if (owner && ownerStats && ownerStats.reloadOnKillPct > 0 && owner.role === 'streamer') {
               this.refundAmmoOnKill(owner, ownerStats.reloadOnKillPct);
             }
-          }
-          // Reward streamer
-          if (owner && owner.role === 'streamer') {
-            owner.score += 1;
-            owner.xp = (owner.xp||0) + XP_PER_KILL;
-            const need = XP_THRESHOLDS(owner.level||0);
-            if ((owner.xp||0) >= need) {
-              owner.xp = (owner.xp||0) - need; owner.level = (owner.level||0) + 1;
-              this.offerUpgrades(owner.id);
+            // Reward streamer (only on kill)
+            if (owner && owner.role === 'streamer') {
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) {
+                owner.xp = (owner.xp||0) - need; owner.level = (owner.level||0) + 1;
+                this.offerUpgrades(owner.id);
+              }
+            }
+            // Call onKill hooks and handle berserker stacks
+            if (killed && owner && owner.mods) {
+              for (const [id, n] of Object.entries(owner.mods)) {
+                (MOD_INDEX as any)[id]?.hooks?.onKill?.({ room: this as any, killerId: owner.id, victimId: p.id, stats: ownerStats || {} });
+              }
+              // Track berserker kills
+              if (ownerStats && ownerStats.berserkerStacks > 0) {
+                (owner as any).berserkerKills = (owner as any).berserkerKills || [];
+                (owner as any).berserkerKills.push(now);
+              }
+              // Blood aura healing
+              if (ownerStats && ownerStats.vampireAuraRange > 0) {
+                const healAmount = Math.floor(ownerStats.vampireAuraRange / 10); // 5 HP per 50px range
+                owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + healAmount);
+              }
             }
           }
           // Handle pierce or ricochet
@@ -947,17 +1260,17 @@ export class RoomDO {
               if (st.burnMs && st.burnDps && Math.random() < (st.burnChance || 1)) { zombie.burns = zombie.burns || []; zombie.burns.push({ until: nowMs + st.burnMs, dps: st.burnDps, nextTick: nowMs + 1000, ownerId: b.ownerId }); }
               if (st.bleedMs && st.bleedDps && Math.random() < (st.bleedChance || 1)) { zombie.bleeds = zombie.bleeds || []; zombie.bleeds.push({ until: nowMs + st.bleedMs, dps: st.bleedDps, nextTick: nowMs + 1000, ownerId: b.ownerId }); }
             }
-            // Reward streamer
-            if (owner && owner.role === 'streamer') {
-              owner.score += 1;
-              owner.xp = (owner.xp||0) + XP_PER_KILL;
-              const need = XP_THRESHOLDS(owner.level||0);
-              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
-            }
             // Kill check for reload-on-kill
             const wasKilled = zombie.hp <= 0;
             if (wasKilled && owner && ownerStats && ownerStats.reloadOnKillPct > 0 && owner.role === 'streamer') {
               this.refundAmmoOnKill(owner, ownerStats.reloadOnKillPct);
+            }
+            // Reward streamer (only on kill)
+            if (wasKilled && owner && owner.role === 'streamer') {
+              owner.score += 1;
+              owner.xp = (owner.xp||0) + XP_PER_KILL;
+              const need = XP_THRESHOLDS(owner.level||0);
+              if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
             }
             // Pierce/ricochet handling
             if (b.meta.pierce > 0) { b.meta.pierce -= 1; aliveBullets.push(b); }
@@ -1004,6 +1317,8 @@ export class RoomDO {
 
     // Zombie damage to streamer
     if (streamer) {
+      // Check for ghost walk invulnerability
+      const isInvulnerable = ((streamer as any).ghostWalkUntil || 0) > now;
       // Dash-kill pass: if streamer is dashing, kill non-brute zombies on contact
       if ((streamer.dashUntil || 0) > now) {
         for (const z of this.players.values()) {
@@ -1040,11 +1355,16 @@ export class RoomDO {
         const dist = Math.hypot(z.pos.x - streamer.pos.x, z.pos.y - streamer.pos.y);
         if (dist < 16) {
           const shielded = ((streamer as any).shieldUntil || 0) > now;
-          if (!shielded) {
+          if (!shielded && !isInvulnerable) {
             if ((streamer.hp ?? this.cfg.streamer.maxHp) > 0) {
               streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - this.cfg.combat.zombieTouchDamage);
             }
             if ((streamer.hp ?? 0) <= 0) {
+              // Handle explosive death before respawn
+              const { s } = statsFor(streamer);
+              if (s.explosiveDeathDamage > 0) {
+                this.createExplosion(streamer.pos.x, streamer.pos.y, s.explosiveDeathDamage, 60, streamer.id);
+              }
               // Respawn streamer; lose unbanked on death (keep banked)
               streamer.pos = this.spawnInRandomRoom();
               streamer.hp = streamer.maxHp ?? this.cfg.streamer.maxHp;
@@ -2117,8 +2437,8 @@ export class RoomDO {
     }
     
     // Add environmental variety
-    // Water/sludge areas (slow movement)
-    const numWaterAreas = Math.floor(rooms.length * 0.08);
+    // Water/sludge areas (slow movement) - configurable frequency
+    const numWaterAreas = Math.floor(rooms.length * this.cfg.tiles.traps.waterFrequency);
     for (let i = 0; i < numWaterAreas; i++) {
       const wx = 3 + Math.floor(Math.random() * (gw - 10));
       const wy = 3 + Math.floor(Math.random() * (gh - 8));
@@ -2134,8 +2454,8 @@ export class RoomDO {
       }
     }
     
-    // Pit traps (lethal)
-    const numPits = Math.floor(rooms.length * 0.05);
+    // Pit traps (lethal) - configurable frequency
+    const numPits = Math.floor(rooms.length * this.cfg.tiles.traps.pitFrequency);
     for (let i = 0; i < numPits; i++) {
       const px = 2 + Math.floor(Math.random() * (gw - 6));
       const py = 2 + Math.floor(Math.random() * (gh - 6));
@@ -2155,6 +2475,44 @@ export class RoomDO {
         }
       }
     }
+    // Spike traps (damage over time) - configurable frequency
+    const numSpikeTraps = Math.floor(rooms.length * this.cfg.tiles.traps.spikeFrequency);
+    for (let i = 0; i < numSpikeTraps; i++) {
+      const sx = 2 + Math.floor(Math.random() * (gw - 6));
+      const sy = 2 + Math.floor(Math.random() * (gh - 6));
+      
+      if (tiles[sy * gw + sx] === 0) {
+        tiles[sy * gw + sx] = 6; // Spikes
+        // Sometimes create spike clusters
+        if (Math.random() < 0.3) {
+          const spikeSize = 1 + Math.floor(Math.random() * 2);
+          for (let dy = 0; dy <= spikeSize && sy + dy < gh - 1; dy++) {
+            for (let dx = 0; dx <= spikeSize && sx + dx < gw - 1; dx++) {
+              if (tiles[(sy + dy) * gw + (sx + dx)] === 0) {
+                tiles[(sy + dy) * gw + (sx + dx)] = 6;
+              }
+            }
+          }
+        }
+      }
+    }
+    // Poison pools (damage and slow) - configurable frequency
+    const numPoisonPools = Math.floor(rooms.length * this.cfg.tiles.traps.poisonFrequency);
+    for (let i = 0; i < numPoisonPools; i++) {
+      const px = 3 + Math.floor(Math.random() * (gw - 10));
+      const py = 3 + Math.floor(Math.random() * (gh - 8));
+      const pw = 2 + Math.floor(Math.random() * 4);
+      const ph = 2 + Math.floor(Math.random() * 3);
+      
+      for (let j = py; j < py + ph && j < gh - 1; j++) {
+        for (let i = px; i < px + pw && i < gw - 1; i++) {
+          if (tiles[j * gw + i] === 0) { // Only replace floor tiles
+            tiles[j * gw + i] = 7; // Poison
+          }
+        }
+      }
+    }
+    
     // Add border walls kept
     // Props/Lights - Scale with map size for immersive exploration
     const props: {x:number;y:number;type:'crate'|'pillar'|'bonepile'}[] = [];
@@ -2276,12 +2634,14 @@ export class RoomDO {
     return true;
   }
 
-  pickZombieClass(): "runner" | "brute" | "spitter" {
+  pickZombieClass(): "runner" | "brute" | "spitter" | "stalker" | "bomber" {
     const w = this.cfg.zombies.weights;
-    const bag: Array<"runner"|"brute"|"spitter"> = [];
+    const bag: Array<"runner"|"brute"|"spitter"|"stalker"|"bomber"> = [];
     for (let i=0;i<w.runner;i++) bag.push('runner');
     for (let i=0;i<w.brute;i++) bag.push('brute');
     for (let i=0;i<w.spitter;i++) bag.push('spitter');
+    for (let i=0;i<w.stalker;i++) bag.push('stalker');
+    for (let i=0;i<w.bomber;i++) bag.push('bomber');
     return bag[Math.floor(Math.random()*bag.length)] || 'runner';
   }
 

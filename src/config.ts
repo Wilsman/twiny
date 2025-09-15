@@ -26,13 +26,15 @@ export type GameConfig = {
   radii: { streamer: number; zombie: number; bulletMargin: number };
   zombies: {
     baseHp: number;
-    weights: { runner: number; brute: number; spitter: number };
-    speedMul: { runner: number; brute: number; spitter: number };
-    hpMul: { runner: number; brute: number; spitter: number };
-    detectionRange: { runner: number; brute: number; spitter: number };
-    chaseRange: { runner: number; brute: number; spitter: number };
+    weights: { runner: number; brute: number; spitter: number; stalker: number; bomber: number };
+    speedMul: { runner: number; brute: number; spitter: number; stalker: number; bomber: number };
+    hpMul: { runner: number; brute: number; spitter: number; stalker: number; bomber: number };
+    detectionRange: { runner: number; brute: number; spitter: number; stalker: number; bomber: number };
+    chaseRange: { runner: number; brute: number; spitter: number; stalker: number; bomber: number };
     brute: { extraKnockbackMul: number };
     spitter: { cooldownMsMin: number; cooldownMsMax: number; manualCooldownMs: number; projectileSpeed: number; projectileTtl: number; hitDamage: number; slowMs: number; streamerSlowMul: number; range: number };
+    stalker: { cloakDurationMs: number; uncloakDurationMs: number; attackCooldownMs: number; cloakAlpha: number };
+    bomber: { explosionRadius: number; explosionDamage: number; fuseTimeMs: number; warningRadius: number };
     runnerAbility: { cooldownMs: number; durationMs: number };
     bruteAbility: { cooldownMs: number; durationMs: number; speed: number };
   };
@@ -45,7 +47,16 @@ export type GameConfig = {
     treasureValues: Record<string, number>;
     treasureDropRates: Record<string, number>;
   };
-  tiles: { size: number; theme: "dungeon" | "cave" | "lab" };
+  tiles: { 
+    size: number; 
+    theme: "dungeon" | "cave" | "lab";
+    traps: {
+      waterFrequency: number;    // Multiplier for water trap spawn rate
+      pitFrequency: number;      // Multiplier for death pit spawn rate  
+      spikeFrequency: number;    // Multiplier for spike trap spawn rate
+      poisonFrequency: number;   // Multiplier for poison pool spawn rate
+    };
+  };
 };
 
 export const CONFIG: GameConfig = {
@@ -93,13 +104,15 @@ export const CONFIG: GameConfig = {
   radii: { streamer: 10, zombie: 12, bulletMargin: 2 },
   zombies: {
     baseHp: 100,
-    weights: { runner: 6, brute: 2, spitter: 2 },
-    speedMul: { runner: 2.5, brute: 0.5, spitter: 1.5 },
-    hpMul: { runner: 1.5, brute: 5, spitter: 2 },
-    detectionRange: { runner: 300, brute: 300, spitter: 300 },
-    chaseRange: { runner: 180, brute: 150, spitter: 200 },
+    weights: { runner: 6, brute: 2, spitter: 2, stalker: 1, bomber: 1 },
+    speedMul: { runner: 2.5, brute: 0.5, spitter: 1.5, stalker: 2.0, bomber: 1.0 },
+    hpMul: { runner: 1.5, brute: 5, spitter: 2, stalker: 1.2, bomber: 2.5 },
+    detectionRange: { runner: 300, brute: 300, spitter: 300, stalker: 400, bomber: 250 },
+    chaseRange: { runner: 180, brute: 150, spitter: 200, stalker: 220, bomber: 120 },
     brute: { extraKnockbackMul: 1.4 },
     spitter: { cooldownMsMin: 1800, cooldownMsMax: 3000, manualCooldownMs: 900, projectileSpeed: 160, projectileTtl: 1800, hitDamage: 6, slowMs: 1600, streamerSlowMul: 0.65, range: 360 },
+    stalker: { cloakDurationMs: 8000, uncloakDurationMs: 2000, attackCooldownMs: 1500, cloakAlpha: 0.15 },
+    bomber: { explosionRadius: 80, explosionDamage: 40, fuseTimeMs: 2000, warningRadius: 100 },
     runnerAbility: { cooldownMs: 1200, durationMs: 280 },
     bruteAbility: { cooldownMs: 1600, durationMs: 320, speed: 240 },
   },
@@ -132,7 +145,16 @@ export const CONFIG: GameConfig = {
       crown: 0.01        // Legendary (1%)
     }
   },
-  tiles: { size: 24, theme: "dungeon" },
+  tiles: { 
+    size: 24, 
+    theme: "dungeon",
+    traps: {
+      waterFrequency: 0.15,    // 15% of rooms get water traps
+      pitFrequency: 0.12,      // 12% of rooms get death pits
+      spikeFrequency: 0.08,    // 8% of rooms get spike traps
+      poisonFrequency: 0.06,   // 6% of rooms get poison pools
+    }
+  },
 };
 
-export type TileId = 0 | 1 | 2 | 3 | 4 | 5; // floor, wall, pit, water, doorClosed, doorOpen
+export type TileId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7; // floor, wall, pit, water, doorClosed, doorOpen, spikes, poison

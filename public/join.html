@@ -425,6 +425,8 @@
           if (p.zClass === 'runner') { ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 1.5; }
           else if (p.zClass === 'brute') { ctx.strokeStyle = '#ffa726'; ctx.lineWidth = 3; }
           else if (p.zClass === 'spitter') { ctx.strokeStyle = '#ba68c8'; ctx.lineWidth = 2; }
+          else if (p.zClass === 'stalker') { ctx.strokeStyle = '#9c27b0'; ctx.lineWidth = 2; }
+          else if (p.zClass === 'bomber') { ctx.strokeStyle = '#f44336'; ctx.lineWidth = 2.5; }
           else { ctx.strokeStyle = '#e57373'; ctx.lineWidth = 1; }
           ctx.globalAlpha = .9; ctx.beginPath(); ctx.arc(sp.x,sp.y, (p.zClass==='brute')?14:13, 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
           if (p.boosted){ ctx.strokeStyle = '#64b5f6'; ctx.globalAlpha=.8; ctx.beginPath(); ctx.arc(sp.x,sp.y,16,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
@@ -645,7 +647,7 @@
     function drawClassLegend(){
       const rect = c.getBoundingClientRect();
       const pad = 12;
-      const boxW = 160, boxH = 70;
+      const boxW = 160, boxH = 114;
       const x = rect.width - boxW - pad;
       const y = rect.height - 160 - boxH - pad;
       ctx.save();
@@ -657,6 +659,8 @@
         { label: 'Runner', color: '#64b5f6', lw: 1.5 },
         { label: 'Brute', color: '#ffa726', lw: 3 },
         { label: 'Spitter', color: '#ba68c8', lw: 2 },
+        { label: 'Stalker', color: '#9c27b0', lw: 2 },
+        { label: 'Bomber', color: '#f44336', lw: 2.5 },
       ];
       let yy = y + 18;
       for (const r of rows){
