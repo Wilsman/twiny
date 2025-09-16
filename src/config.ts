@@ -57,6 +57,78 @@ export type GameConfig = {
       poisonFrequency: number;   // Multiplier for poison pool spawn rate
     };
   };
+  bosses: {
+    spawnIntervalMs: number;     // Time between boss spawns
+    maxActive: number;           // Maximum bosses active at once
+    announceMs: number;          // Warning time before boss spawns
+    types: {
+      necromancer: {
+        hp: number;
+        speed: number;
+        radius: number;
+        damage: number;
+        visual: {
+          color: string;
+          secondaryColor: string;
+          symbol: string;
+          minimapIcon: string;
+          glowColor: string;
+        };
+        abilities: {
+          summon: { cooldownMs: number; minionCount: number; minionHp: number };
+          teleport: { cooldownMs: number; range: number };
+          poisonField: { cooldownMs: number; radius: number; durationMs: number; dps: number };
+        };
+      };
+      bruteKing: {
+        hp: number;
+        speed: number;
+        radius: number;
+        damage: number;
+        visual: {
+          color: string;
+          secondaryColor: string;
+          symbol: string;
+          minimapIcon: string;
+          glowColor: string;
+        };
+        abilities: {
+          charge: { cooldownMs: number; speed: number; durationMs: number; damage: number };
+          groundSlam: { cooldownMs: number; radius: number; damage: number; stunMs: number };
+          enrage: { hpThreshold: number; speedMul: number; damageMul: number };
+        };
+      };
+      shadowLord: {
+        hp: number;
+        speed: number;
+        radius: number;
+        damage: number;
+        visual: {
+          color: string;
+          secondaryColor: string;
+          symbol: string;
+          minimapIcon: string;
+          glowColor: string;
+        };
+        abilities: {
+          phase: { cooldownMs: number; durationMs: number; alpha: number };
+          shadowClone: { cooldownMs: number; cloneCount: number; cloneHp: number; durationMs: number };
+          lifeDrain: { cooldownMs: number; range: number; dps: number; healMul: number };
+        };
+      };
+    };
+    lootDrops: {
+      guaranteedDrops: number;   // Minimum drops on death
+      bonusDropChance: number;   // Chance for extra drops
+      maxBonusDrops: number;     // Maximum bonus drops
+      treasureMultiplier: number; // Multiplier for treasure value
+      specialDrops: {
+        legendaryChance: number;  // Chance for legendary items
+        weaponUpgradeChance: number; // Chance for weapon upgrades
+        keyDropChance: number;    // Chance for keys
+      };
+    };
+  };
 };
 
 export const CONFIG: GameConfig = {
@@ -154,6 +226,78 @@ export const CONFIG: GameConfig = {
       spikeFrequency: 0.08,    // 8% of rooms get spike traps
       poisonFrequency: 0.06,   // 6% of rooms get poison pools
     }
+  },
+  bosses: {
+    spawnIntervalMs: 120000,   // 2 minutes between boss spawns
+    maxActive: 1,              // Only one boss at a time
+    announceMs: 10000,         // 10 second warning before spawn
+    types: {
+      necromancer: {
+        hp: 2000,
+        speed: 80,
+        radius: 20,
+        damage: 25,
+        visual: {
+          color: "#4A0E4E",           // Dark purple
+          secondaryColor: "#8B008B",  // Dark magenta
+          symbol: "💀",               // Skull emoji
+          minimapIcon: "⚫",          // Black circle
+          glowColor: "#9932CC",       // Dark orchid glow
+        },
+        abilities: {
+          summon: { cooldownMs: 15000, minionCount: 3, minionHp: 150 },
+          teleport: { cooldownMs: 8000, range: 300 },
+          poisonField: { cooldownMs: 12000, radius: 100, durationMs: 8000, dps: 8 },
+        },
+      },
+      bruteKing: {
+        hp: 3500,
+        speed: 60,
+        radius: 25,
+        damage: 40,
+        visual: {
+          color: "#8B0000",           // Dark red
+          secondaryColor: "#FF4500",  // Orange red
+          symbol: "👑",               // Crown emoji
+          minimapIcon: "🔴",          // Red circle
+          glowColor: "#DC143C",       // Crimson glow
+        },
+        abilities: {
+          charge: { cooldownMs: 10000, speed: 250, durationMs: 2000, damage: 60 },
+          groundSlam: { cooldownMs: 15000, radius: 120, damage: 50, stunMs: 2000 },
+          enrage: { hpThreshold: 0.3, speedMul: 1.5, damageMul: 1.8 },
+        },
+      },
+      shadowLord: {
+        hp: 2500,
+        speed: 100,
+        radius: 18,
+        damage: 30,
+        visual: {
+          color: "#2F2F2F",           // Dark gray
+          secondaryColor: "#4B0082",  // Indigo
+          symbol: "👤",               // Silhouette emoji
+          minimapIcon: "🟣",          // Purple circle
+          glowColor: "#6A0DAD",       // Purple glow
+        },
+        abilities: {
+          phase: { cooldownMs: 12000, durationMs: 4000, alpha: 0.2 },
+          shadowClone: { cooldownMs: 20000, cloneCount: 2, cloneHp: 400, durationMs: 15000 },
+          lifeDrain: { cooldownMs: 8000, range: 150, dps: 15, healMul: 0.8 },
+        },
+      },
+    },
+    lootDrops: {
+      guaranteedDrops: 8,        // Always drop 8 items
+      bonusDropChance: 0.7,      // 70% chance for bonus drops
+      maxBonusDrops: 5,          // Up to 5 bonus drops
+      treasureMultiplier: 3.0,   // 3x treasure value
+      specialDrops: {
+        legendaryChance: 0.15,   // 15% chance for legendary treasures
+        weaponUpgradeChance: 0.25, // 25% chance for weapon upgrades
+        keyDropChance: 0.8,      // 80% chance for keys
+      },
+    },
   },
 };
 

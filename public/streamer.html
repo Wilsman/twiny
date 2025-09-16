@@ -1296,6 +1296,141 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
           }
         }
 
+        // Bosses
+        if (state.bosses) {
+          for (const boss of state.bosses) {
+            const visual = boss.visual || {};
+            ctx.save();
+            
+            // Boss glow effect
+            ctx.shadowColor = visual.glowColor || "#ff0000";
+            ctx.shadowBlur = 20;
+            
+            // Main boss body - larger circle with unique colors
+            ctx.fillStyle = visual.color || "#8B0000";
+            ctx.strokeStyle = visual.secondaryColor || "#FF4500";
+            ctx.lineWidth = 4;
+            
+            // Phase effect for Shadow Lord
+            if (boss.phased) {
+              ctx.globalAlpha = 0.3;
+              ctx.setLineDash([5, 5]);
+            }
+            
+            ctx.beginPath();
+            ctx.arc(boss.pos.x, boss.pos.y, boss.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Reset line dash
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+            
+            // Boss symbol in center
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "20px system-ui";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(visual.symbol || "👹", boss.pos.x, boss.pos.y);
+            
+            // HP bar above boss
+            const barWidth = boss.radius * 2.5;
+            const barHeight = 6;
+            const barX = boss.pos.x - barWidth / 2;
+            const barY = boss.pos.y - boss.radius - 15;
+            const hpRatio = boss.hp / boss.maxHp;
+            
+            // HP bar background
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+            
+            // HP bar fill with color based on health
+            ctx.fillStyle = hpRatio > 0.6 ? "#4caf50" : hpRatio > 0.3 ? "#ff9800" : "#f44336";
+            ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight);
+            
+            // Enrage effect for Brute King
+            if (boss.enraged) {
+              ctx.strokeStyle = "#ff4444";
+              ctx.lineWidth = 3;
+              ctx.globalAlpha = 0.8;
+              ctx.beginPath();
+              ctx.arc(boss.pos.x, boss.pos.y, boss.radius + 8, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            
+            // Boss name and type
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "14px system-ui";
+            ctx.textAlign = "center";
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 2;
+            ctx.strokeText(boss.type.toUpperCase(), boss.pos.x, boss.pos.y - boss.radius - 25);
+            ctx.fillText(boss.type.toUpperCase(), boss.pos.x, boss.pos.y - boss.radius - 25);
+            
+            ctx.restore();
+          }
+        }
+
+        // Boss minions
+        if (state.bossMinions) {
+          for (const minion of state.bossMinions) {
+            ctx.save();
+            
+            // Minion body - smaller, darker
+            ctx.fillStyle = "#4a148c";
+            ctx.strokeStyle = "#7b1fa2";
+            ctx.lineWidth = 2;
+            ctx.shadowColor = "#7b1fa2";
+            ctx.shadowBlur = 8;
+            
+            ctx.beginPath();
+            ctx.arc(minion.pos.x, minion.pos.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Minion symbol
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "12px system-ui";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("💀", minion.pos.x, minion.pos.y);
+            
+            ctx.restore();
+          }
+        }
+
+        // Poison fields
+        if (state.poisonFields) {
+          for (const field of state.poisonFields) {
+            ctx.save();
+            
+            // Poison field effect - pulsing green circle
+            const time = Date.now() / 1000;
+            const pulse = 0.7 + 0.3 * Math.sin(time * 3);
+            
+            ctx.globalAlpha = 0.4 * pulse;
+            ctx.fillStyle = "#4caf50";
+            ctx.shadowColor = "#4caf50";
+            ctx.shadowBlur = 15;
+            
+            ctx.beginPath();
+            ctx.arc(field.pos.x, field.pos.y, field.radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Poison field border
+            ctx.globalAlpha = 0.8;
+            ctx.strokeStyle = "#8bc34a";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            ctx.restore();
+          }
+        }
+
         // Players
         ctx.font =
           "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
@@ -1702,6 +1837,52 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
               ctx.lineWidth = 1;
               ctx.stroke();
             }
+          }
+        }
+        
+        // Bosses on minimap
+        if (state.bosses) {
+          for (const boss of state.bosses) {
+            const px = cx + (boss.pos.x - centerX) * scale;
+            const py = cy + (boss.pos.y - centerY) * scale;
+            const visual = boss.visual || {};
+            
+            ctx.save();
+            
+            // Boss icon - larger and more prominent
+            ctx.fillStyle = visual.color || "#8B0000";
+            ctx.strokeStyle = visual.glowColor || "#ff0000";
+            ctx.lineWidth = 2;
+            ctx.shadowColor = visual.glowColor || "#ff0000";
+            ctx.shadowBlur = 4;
+            
+            // Pulsing effect for bosses
+            const time = Date.now() / 1000;
+            const pulse = 0.8 + 0.2 * Math.sin(time * 2);
+            const radius = 4 * pulse;
+            
+            ctx.beginPath();
+            ctx.arc(px, py, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Boss symbol on minimap
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "8px system-ui";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(visual.minimapIcon || "💀", px, py);
+            
+            // Enrage indicator
+            if (boss.enraged) {
+              ctx.strokeStyle = "#ff4444";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.arc(px, py, radius + 2, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            
+            ctx.restore();
           }
         }
         ctx.restore(); // unclip

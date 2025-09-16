@@ -99,7 +99,7 @@ interface Player {
 }
 
 import { XP_PER_KILL, XP_THRESHOLDS, rollChoices, MOD_INDEX, statsFor, statusFrom } from './upgrades';
-import type { ActiveBullet, BulletSpawnSpec } from './types';
+import type { ActiveBullet, BulletSpawnSpec, Boss, BossMinion, PoisonField, BossType } from './types';
 
 type Bullet = ActiveBullet;
 
@@ -167,6 +167,13 @@ export class RoomDO {
   maxAIZombies = CONFIG.aiZombies.maxCount;
   aiZombieSpawnCooldown = CONFIG.aiZombies.spawnCooldownMs;
   lastAIZombieSpawn = 0;
+  // Boss system properties
+  bosses: Boss[] = [];
+  bossMinions: BossMinion[] = [];
+  poisonFields: PoisonField[] = [];
+  lastBossSpawn = 0;
+  nextBossAnnouncement?: number;
+  bossSpawnCooldown = CONFIG.bosses.spawnIntervalMs;
   // Damage numbers for visual feedback
   damageNumbers: Array<{id: string; x: number; y: number; damage: number; isCrit: boolean; isDot: boolean; timestamp: number}> = [];
   // Tilemap state
@@ -722,6 +729,15 @@ export class RoomDO {
 
     // Spawn AI Zombies if needed
     this.spawnAIZombiesIfNeeded(now);
+
+    // Update Boss System
+    this.updateBossSystem(now);
+
+    // Update Boss Minions
+    this.updateBossMinions(now);
+
+    // Update Poison Fields
+    this.updatePoisonFields(now);
 
     // Integrate movement
     const dt = this.tickMs / 1000;
@@ -1311,7 +1327,73 @@ export class RoomDO {
             break;
           }
         }
-        if (!hitAI && !consumed) aliveBullets.push(b);
+        // Check collision with bosses if not consumed by zombies
+        if (!hitAI && !consumed) {
+          let hitBoss = false;
+          for (const boss of this.bosses) {
+            if (boss.state === "dying") continue;
+            
+            // Skip if boss is phased (Shadow Lord ability)
+            if (boss.phased) continue;
+            
+            const bossRadius = boss.radius;
+            if (Math.hypot(boss.pos.x - b.pos.x, boss.pos.y - b.pos.y) < bossRadius) {
+              const base = b.meta.damage || 0;
+              const crit = Math.random() < (b.meta.critChance || 0);
+              const dealt = Math.max(0, Math.round(base * (crit ? (b.meta.critMul || 1) : 1)));
+              boss.hp = Math.max(0, boss.hp - dealt);
+              
+              // Add damage number for boss hit
+              this.addDamageNumber(boss.pos.x, boss.pos.y, dealt, crit, false);
+              
+              const owner = this.players.get(b.ownerId);
+              const ownerStats = owner ? statsFor(owner).s : undefined;
+              
+              // Lifesteal on boss hit
+              if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
+                const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
+                owner.hp = Math.min(owner.maxHp ?? this.cfg.streamer.maxHp, (owner.hp ?? this.cfg.streamer.maxHp) + heal);
+              }
+              
+              // Check if boss died
+              if (boss.hp <= 0 && boss.state !== "dying") {
+                boss.state = "dying";
+                // Reward streamer for boss kill
+                if (owner && owner.role === 'streamer') {
+                  owner.score += 10; // More points for boss kill
+                  owner.xp = (owner.xp||0) + (XP_PER_KILL * 5); // 5x XP for boss
+                  const need = XP_THRESHOLDS(owner.level||0);
+                  if ((owner.xp||0) >= need) {
+                    owner.xp = (owner.xp||0) - need;
+                    owner.level = (owner.level||0) + 1;
+                    this.offerUpgrades(owner.id);
+                  }
+                }
+              }
+              
+              // Pierce/ricochet handling
+              if (b.meta.pierce > 0) {
+                b.meta.pierce -= 1;
+                aliveBullets.push(b);
+              } else if (b.meta.ricochet > 0 && this.retargetBulletRicochet(b, 'boss:'+boss.id)) {
+                b.meta.ricochet -= 1;
+                aliveBullets.push(b);
+              } else {
+                consumed = true;
+              }
+              
+              // Chain lightning
+              if (b.meta.chain > 0) {
+                this.applyChainDamage(b, { x: b.pos.x, y: b.pos.y }, 'boss:'+boss.id, b.meta.chain, Math.round((b.meta.damage||0)*0.7));
+              }
+              
+              hitBoss = true;
+              break;
+            }
+          }
+          
+          if (!hitBoss && !consumed) aliveBullets.push(b);
+        }
       }
     }
     this.bullets = aliveBullets;
@@ -1923,6 +2005,22 @@ export class RoomDO {
         isCrit: dn.isCrit,
         isDot: dn.isDot,
         timestamp: dn.timestamp
+      })),
+      bosses: this.bosses.map(boss => this.publicBoss(boss)),
+      bossMinions: this.bossMinions.map(minion => ({
+        id: minion.id,
+        bossId: minion.bossId,
+        pos: minion.pos,
+        hp: minion.hp,
+        maxHp: minion.maxHp,
+        state: minion.state
+      })),
+      poisonFields: this.poisonFields.map(field => ({
+        id: field.id,
+        pos: field.pos,
+        radius: field.radius,
+        dps: field.dps,
+        expiresAt: field.expiresAt
       })),
       arena: { w: this.W, h: this.H },
       remainingTime: Math.max(0, Math.floor(((this.roundEndTime || Date.now()) - Date.now()) / 1000)),
@@ -2815,4 +2913,570 @@ export class RoomDO {
   }
 
   rotateExtractionIfNeeded(nowMs: number) { /* no-op */ }
+
+  // Boss System Methods
+  updateBossSystem(now: number) {
+    // Check for boss spawn announcement
+    if (!this.nextBossAnnouncement && now - this.lastBossSpawn > this.bossSpawnCooldown - this.cfg.bosses.announceMs) {
+      if (this.bosses.length < this.cfg.bosses.maxActive) {
+        this.nextBossAnnouncement = now + this.cfg.bosses.announceMs;
+        this.broadcast("notice", { message: "⚠️ A powerful boss is approaching! Prepare for battle!" });
+      }
+    }
+
+    // Spawn boss if it's time
+    if (this.nextBossAnnouncement && now >= this.nextBossAnnouncement) {
+      this.spawnRandomBoss();
+      this.nextBossAnnouncement = undefined;
+      this.lastBossSpawn = now;
+    }
+
+    // Update existing bosses
+    for (let i = this.bosses.length - 1; i >= 0; i--) {
+      const boss = this.bosses[i];
+      this.updateBoss(boss, now);
+      
+      // Remove dead bosses
+      if (boss.hp <= 0 && boss.state === "dying") {
+        this.onBossDeath(boss);
+        this.bosses.splice(i, 1);
+      }
+    }
+  }
+
+  spawnRandomBoss() {
+    const bossTypes: BossType[] = ["necromancer", "bruteKing", "shadowLord"];
+    const randomType = bossTypes[Math.floor(Math.random() * bossTypes.length)];
+    const spawnPos = this.spawnInRandomRoom();
+    
+    const bossConfig = this.cfg.bosses.types[randomType];
+    const boss: Boss = {
+      id: crypto.randomUUID().slice(0, 8),
+      type: randomType,
+      pos: spawnPos,
+      vel: { x: 0, y: 0 },
+      hp: bossConfig.hp,
+      maxHp: bossConfig.hp,
+      radius: bossConfig.radius,
+      damage: bossConfig.damage,
+      speed: bossConfig.speed,
+      state: "spawning",
+      lastSeen: Date.now(),
+      spawnTime: Date.now(),
+      minionIds: [],
+      cloneIds: []
+    };
+
+    this.bosses.push(boss);
+    this.broadcast("boss_spawn", { boss: this.publicBoss(boss) });
+    this.broadcast("notice", { message: `💀 ${randomType.toUpperCase()} has entered the arena!` });
+  }
+
+  updateBoss(boss: Boss, now: number) {
+    const streamer = [...this.players.values()].find(p => p.role === "streamer" && p.alive);
+    if (!streamer) {
+      boss.state = "idle";
+      return;
+    }
+
+    const dist = Math.hypot(boss.pos.x - streamer.pos.x, boss.pos.y - streamer.pos.y);
+    
+    // Check if phase ability has expired
+    if (boss.phased && boss.phaseUntil && now > boss.phaseUntil) {
+      boss.phased = false;
+      boss.phaseUntil = undefined;
+      this.broadcast("notice", { message: "👻 Shadow Lord returns to reality!" });
+    }
+    
+    // Handle boss states
+    switch (boss.state) {
+      case "spawning":
+        if (now - boss.spawnTime > 2000) {
+          boss.state = "idle";
+        }
+        break;
+        
+      case "idle":
+        if (dist < 400) {
+          boss.state = "chasing";
+          boss.targetId = streamer.id;
+        }
+        break;
+        
+      case "chasing":
+        if (dist > 600) {
+          boss.state = "idle";
+          boss.targetId = undefined;
+        } else if (dist < boss.radius + 30) {
+          boss.state = "attacking";
+        }
+        break;
+        
+      case "attacking":
+        if (dist > boss.radius + 50) {
+          boss.state = "chasing";
+        }
+        break;
+    }
+
+    // Movement AI - improved movement logic
+    if ((boss.state === "chasing" || boss.state === "attacking") && streamer) {
+      const dx = streamer.pos.x - boss.pos.x;
+      const dy = streamer.pos.y - boss.pos.y;
+      const len = Math.hypot(dx, dy) || 1;
+      
+      let speed = boss.speed;
+      if (boss.enraged && boss.type === "bruteKing") {
+        const config = this.cfg.bosses.types.bruteKing;
+        speed *= config.abilities.enrage.speedMul;
+      }
+      
+      // Only move if not too close (prevents jittering)
+      if (len > boss.radius + this.cfg.radii.streamer + 5) {
+        boss.vel.x = (dx / len) * speed;
+        boss.vel.y = (dy / len) * speed;
+      } else {
+        // Slow down when very close
+        boss.vel.x = (dx / len) * speed * 0.3;
+        boss.vel.y = (dy / len) * speed * 0.3;
+      }
+    } else if (boss.state === "idle") {
+      // Idle wandering movement
+      if (!boss.wanderTarget || Math.hypot(boss.pos.x - boss.wanderTarget.x, boss.pos.y - boss.wanderTarget.y) < 20) {
+        // Set new wander target
+        boss.wanderTarget = {
+          x: boss.pos.x + (Math.random() - 0.5) * 200,
+          y: boss.pos.y + (Math.random() - 0.5) * 200
+        };
+        // Keep target in bounds
+        boss.wanderTarget.x = Math.max(boss.radius, Math.min(this.W - boss.radius, boss.wanderTarget.x));
+        boss.wanderTarget.y = Math.max(boss.radius, Math.min(this.H - boss.radius, boss.wanderTarget.y));
+      }
+      
+      const dx = boss.wanderTarget.x - boss.pos.x;
+      const dy = boss.wanderTarget.y - boss.pos.y;
+      const len = Math.hypot(dx, dy) || 1;
+      
+      boss.vel.x = (dx / len) * boss.speed * 0.5; // Slower idle movement
+      boss.vel.y = (dy / len) * boss.speed * 0.5;
+    } else {
+      boss.vel.x = 0;
+      boss.vel.y = 0;
+    }
+
+    // Update position
+    const dt = this.tickMs / 1000;
+    boss.pos.x += boss.vel.x * dt;
+    boss.pos.y += boss.vel.y * dt;
+
+    // Keep boss in bounds
+    boss.pos.x = Math.max(boss.radius, Math.min(this.W - boss.radius, boss.pos.x));
+    boss.pos.y = Math.max(boss.radius, Math.min(this.H - boss.radius, boss.pos.y));
+
+    // Handle abilities
+    this.processBossAbilities(boss, now, streamer);
+
+    // Handle contact damage with cooldown and range check
+    if (boss.state === "attacking" && streamer && dist < boss.radius + this.cfg.radii.streamer + 10) {
+      // Add damage cooldown to prevent hitting every tick and ensure close range
+      // Also prevent damage while boss is phased
+      if ((!boss.lastDamage || now - boss.lastDamage > 1000) && dist < 100 && !boss.phased) { // 1 second cooldown + max 100px range + not phased
+        let damage = boss.damage;
+        if (boss.enraged && boss.type === "bruteKing") {
+          damage *= this.cfg.bosses.types.bruteKing.abilities.enrage.damageMul;
+        }
+        
+        streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+        this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, false);
+        boss.lastDamage = now;
+        
+        // Knockback
+        const kx = (streamer.pos.x - boss.pos.x) / (dist || 1);
+        const ky = (streamer.pos.y - boss.pos.y) / (dist || 1);
+        streamer.pos.x += kx * this.cfg.combat.knockbackStep * 2;
+        streamer.pos.y += ky * this.cfg.combat.knockbackStep * 2;
+      }
+    }
+
+    // Check for enrage condition (Brute King only)
+    if (boss.type === "bruteKing" && !boss.enraged) {
+      const hpPct = boss.hp / boss.maxHp;
+      if (hpPct <= this.cfg.bosses.types.bruteKing.abilities.enrage.hpThreshold) {
+        boss.enraged = true;
+        this.broadcast("notice", { message: "🔥 BRUTE KING ENRAGES! Speed and damage increased!" });
+      }
+    }
+  }
+
+  processBossAbilities(boss: Boss, now: number, streamer: Player) {
+    const bossConfig = this.cfg.bosses.types[boss.type];
+    
+    // Process abilities based on boss type
+    switch (boss.type) {
+      case 'necromancer':
+        const necroConfig = bossConfig as typeof this.cfg.bosses.types.necromancer;
+        
+        // Summon minions
+        if (!boss.lastSummon || now - boss.lastSummon > necroConfig.abilities.summon.cooldownMs) {
+          if (Math.random() < 0.3) {
+            this.necromancerSummon(boss, now);
+            boss.lastSummon = now;
+          }
+        }
+        
+        // Teleport
+        if (!boss.lastTeleport || now - boss.lastTeleport > necroConfig.abilities.teleport.cooldownMs) {
+          if (Math.random() < 0.2) {
+            this.necromancerTeleport(boss, streamer);
+            boss.lastTeleport = now;
+          }
+        }
+        
+        // Poison field
+        if (!boss.lastPoisonField || now - boss.lastPoisonField > necroConfig.abilities.poisonField.cooldownMs) {
+          if (Math.random() < 0.25) {
+            this.necromancerPoisonField(boss, streamer, now);
+            boss.lastPoisonField = now;
+          }
+        }
+        break;
+        
+      case 'bruteKing':
+        const bruteConfig = bossConfig as typeof this.cfg.bosses.types.bruteKing;
+        
+        // Check for enrage
+        if (!boss.enraged && boss.hp <= boss.maxHp * bruteConfig.abilities.enrage.hpThreshold) {
+          boss.enraged = true;
+          boss.speed *= bruteConfig.abilities.enrage.speedMul;
+          boss.damage *= bruteConfig.abilities.enrage.damageMul;
+          this.broadcast("notice", { message: `💀 The ${boss.type} becomes enraged!` });
+        }
+        
+        // Charge attack
+        if (!boss.lastCharge || now - boss.lastCharge > bruteConfig.abilities.charge.cooldownMs) {
+          if (Math.random() < 0.4) {
+            this.bruteKingCharge(boss, streamer, now);
+            boss.lastCharge = now;
+          }
+        }
+        
+        // Ground slam
+        if (!boss.lastGroundSlam || now - boss.lastGroundSlam > bruteConfig.abilities.groundSlam.cooldownMs) {
+          if (Math.random() < 0.3) {
+            this.bruteKingGroundSlam(boss, streamer, now);
+            boss.lastGroundSlam = now;
+          }
+        }
+        break;
+        
+      case 'shadowLord':
+        const shadowConfig = bossConfig as typeof this.cfg.bosses.types.shadowLord;
+        
+        // Phase ability
+        if (!boss.lastPhase || now - boss.lastPhase > shadowConfig.abilities.phase.cooldownMs) {
+          if (Math.random() < 0.2) {
+            this.shadowLordPhase(boss, now);
+            boss.lastPhase = now;
+          }
+        }
+        
+        // Shadow clones
+        if (!boss.lastShadowClone || now - boss.lastShadowClone > shadowConfig.abilities.shadowClone.cooldownMs) {
+          if (Math.random() < 0.25) {
+            this.shadowLordClones(boss, now);
+            boss.lastShadowClone = now;
+          }
+        }
+        
+        // Life drain
+        if (!boss.lastLifeDrain || now - boss.lastLifeDrain > shadowConfig.abilities.lifeDrain.cooldownMs) {
+          if (Math.random() < 0.3) {
+            this.shadowLordLifeDrain(boss, streamer, now);
+            boss.lastLifeDrain = now;
+          }
+        }
+        break;
+    }
+  }
+
+  // Boss ability implementations
+  necromancerSummon(boss: Boss, now: number) {
+    const config = this.cfg.bosses.types.necromancer.abilities.summon;
+    for (let i = 0; i < config.minionCount; i++) {
+      const angle = (Math.PI * 2 * i) / config.minionCount;
+      const spawnX = boss.pos.x + Math.cos(angle) * 60;
+      const spawnY = boss.pos.y + Math.sin(angle) * 60;
+      
+      const minion: BossMinion = {
+        id: crypto.randomUUID().slice(0, 8),
+        bossId: boss.id,
+        pos: { x: spawnX, y: spawnY },
+        vel: { x: 0, y: 0 },
+        hp: config.minionHp,
+        maxHp: config.minionHp,
+        state: "idle",
+        lastSeen: now,
+        spawnTime: now
+      };
+      
+      this.bossMinions.push(minion);
+      boss.minionIds = boss.minionIds || [];
+      boss.minionIds.push(minion.id);
+    }
+    
+    this.broadcast("notice", { message: "💀 Necromancer summons undead minions!" });
+  }
+
+  necromancerTeleport(boss: Boss, streamer: Player) {
+    const config = this.cfg.bosses.types.necromancer.abilities.teleport;
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 100 + Math.random() * (config.range - 100);
+    
+    const newX = streamer.pos.x + Math.cos(angle) * distance;
+    const newY = streamer.pos.y + Math.sin(angle) * distance;
+    
+    boss.pos.x = Math.max(boss.radius, Math.min(this.W - boss.radius, newX));
+    boss.pos.y = Math.max(boss.radius, Math.min(this.H - boss.radius, newY));
+    
+    this.broadcast("boss_teleport", { bossId: boss.id, pos: boss.pos });
+  }
+
+  necromancerPoisonField(boss: Boss, streamer: Player, now: number) {
+    const config = this.cfg.bosses.types.necromancer.abilities.poisonField;
+    
+    const poisonField: PoisonField = {
+      id: crypto.randomUUID().slice(0, 8),
+      pos: { x: streamer.pos.x, y: streamer.pos.y },
+      radius: config.radius,
+      dps: config.dps,
+      createdAt: now,
+      expiresAt: now + config.durationMs,
+      ownerId: boss.id
+    };
+    
+    this.poisonFields.push(poisonField);
+    this.broadcast("poison_field", { field: poisonField });
+  }
+
+  bruteKingCharge(boss: Boss, streamer: Player, now: number) {
+    const config = this.cfg.bosses.types.bruteKing.abilities.charge;
+    const dx = streamer.pos.x - boss.pos.x;
+    const dy = streamer.pos.y - boss.pos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    
+    boss.chargeDirX = dx / len;
+    boss.chargeDirY = dy / len;
+    boss.chargeUntil = now + config.durationMs;
+    boss.state = "ability";
+    
+    this.broadcast("notice", { message: "⚡ Brute King charges forward!" });
+  }
+
+  bruteKingGroundSlam(boss: Boss, streamer: Player, now: number) {
+    const config = this.cfg.bosses.types.bruteKing.abilities.groundSlam;
+    const dist = Math.hypot(boss.pos.x - streamer.pos.x, boss.pos.y - streamer.pos.y);
+    
+    if (dist <= config.radius) {
+      const damage = config.damage;
+      streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+      this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, false);
+      
+      // Stun effect
+      (streamer as any).stunUntil = now + config.stunMs;
+    }
+    
+    this.broadcast("ground_slam", { pos: boss.pos, radius: config.radius });
+    this.broadcast("notice", { message: "💥 Ground slam creates shockwaves!" });
+  }
+
+  shadowLordPhase(boss: Boss, now: number) {
+    const config = this.cfg.bosses.types.shadowLord.abilities.phase;
+    boss.phased = true;
+    boss.phaseUntil = now + config.durationMs;
+    
+    this.broadcast("notice", { message: "👻 Shadow Lord phases out of reality!" });
+  }
+
+  shadowLordClones(boss: Boss, now: number) {
+    const config = this.cfg.bosses.types.shadowLord.abilities.shadowClone;
+    
+    for (let i = 0; i < config.cloneCount; i++) {
+      const angle = (Math.PI * 2 * i) / config.cloneCount;
+      const spawnX = boss.pos.x + Math.cos(angle) * 80;
+      const spawnY = boss.pos.y + Math.sin(angle) * 80;
+      
+      const clone: BossMinion = {
+        id: crypto.randomUUID().slice(0, 8),
+        bossId: boss.id,
+        pos: { x: spawnX, y: spawnY },
+        vel: { x: 0, y: 0 },
+        hp: config.cloneHp,
+        maxHp: config.cloneHp,
+        state: "idle",
+        lastSeen: now,
+        spawnTime: now,
+        expiresAt: now + config.durationMs
+      };
+      
+      this.bossMinions.push(clone);
+      boss.cloneIds = boss.cloneIds || [];
+      boss.cloneIds.push(clone.id);
+    }
+    
+    this.broadcast("notice", { message: "🌙 Shadow clones emerge from the darkness!" });
+  }
+
+  shadowLordLifeDrain(boss: Boss, streamer: Player, now: number) {
+    const config = this.cfg.bosses.types.shadowLord.abilities.lifeDrain;
+    const damage = config.dps;
+    const heal = Math.round(damage * config.healMul);
+    
+    streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+    boss.hp = Math.min(boss.maxHp, boss.hp + heal);
+    
+    this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, true);
+    this.addDamageNumber(boss.pos.x, boss.pos.y, -heal, false, false); // Negative for healing
+    
+    this.broadcast("life_drain", { from: boss.pos, to: streamer.pos });
+  }
+
+  updateBossMinions(now: number) {
+    for (let i = this.bossMinions.length - 1; i >= 0; i--) {
+      const minion = this.bossMinions[i];
+      
+      // Remove expired minions
+      if (minion.expiresAt && now > minion.expiresAt) {
+        this.bossMinions.splice(i, 1);
+        continue;
+      }
+      
+      // Remove minions whose boss is dead
+      const boss = this.bosses.find(b => b.id === minion.bossId);
+      if (!boss) {
+        this.bossMinions.splice(i, 1);
+        continue;
+      }
+      
+      // Simple AI for minions
+      const streamer = [...this.players.values()].find(p => p.role === "streamer" && p.alive);
+      if (streamer) {
+        const dist = Math.hypot(minion.pos.x - streamer.pos.x, minion.pos.y - streamer.pos.y);
+        
+        if (dist < 200) {
+          minion.state = "chasing";
+          minion.targetId = streamer.id;
+          
+          const dx = streamer.pos.x - minion.pos.x;
+          const dy = streamer.pos.y - minion.pos.y;
+          const len = Math.hypot(dx, dy) || 1;
+          
+          const speed = 80;
+          minion.vel.x = (dx / len) * speed;
+          minion.vel.y = (dy / len) * speed;
+          
+          // Update position
+          const dt = this.tickMs / 1000;
+          minion.pos.x += minion.vel.x * dt;
+          minion.pos.y += minion.vel.y * dt;
+          
+          // Contact damage
+          if (dist < 20) {
+            const damage = 15;
+            streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+            this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, false);
+          }
+        }
+      }
+    }
+  }
+
+  updatePoisonFields(now: number) {
+    for (let i = this.poisonFields.length - 1; i >= 0; i--) {
+      const field = this.poisonFields[i];
+      
+      if (now > field.expiresAt) {
+        this.poisonFields.splice(i, 1);
+        continue;
+      }
+      
+      // Damage streamer if in poison field
+      const streamer = [...this.players.values()].find(p => p.role === "streamer" && p.alive);
+      if (streamer) {
+        const dist = Math.hypot(streamer.pos.x - field.pos.x, streamer.pos.y - field.pos.y);
+        if (dist <= field.radius) {
+          const damage = Math.round(field.dps * (this.tickMs / 1000));
+          streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+          this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, true);
+        }
+      }
+    }
+  }
+
+  onBossDeath(boss: Boss) {
+    // Generate loot drops
+    this.generateBossLoot(boss);
+    
+    // Clean up minions and clones
+    this.bossMinions = this.bossMinions.filter(m => m.bossId !== boss.id);
+    
+    // Broadcast death
+    this.broadcast("boss_death", { bossId: boss.id, pos: boss.pos });
+    this.broadcast("notice", { message: `💀 ${boss.type.toUpperCase()} has been defeated! Loot scattered!` });
+  }
+
+  generateBossLoot(boss: Boss) {
+    const config = this.cfg.bosses.lootDrops;
+    const dropCount = config.guaranteedDrops + 
+      (Math.random() < config.bonusDropChance ? Math.floor(Math.random() * config.maxBonusDrops) : 0);
+    
+    for (let i = 0; i < dropCount; i++) {
+      const angle = (Math.PI * 2 * i) / dropCount + Math.random() * 0.5;
+      const distance = 30 + Math.random() * 60;
+      const dropX = boss.pos.x + Math.cos(angle) * distance;
+      const dropY = boss.pos.y + Math.sin(angle) * distance;
+      
+      let dropType: PickupType;
+      
+      // Boss drops: ammo, health, and treasures (no keys)
+      const rand = Math.random();
+      if (rand < 0.4) {
+        // 40% chance for ammo
+        dropType = "ammo";
+      } else if (rand < 0.6) {
+        // 20% chance for health
+        dropType = "health";
+      } else if (rand < 0.8) {
+        // 20% chance for valuable treasures
+        const valuableTreasures: PickupType[] = ["gem", "crystal", "orb", "relic", "artifact"];
+        dropType = valuableTreasures[Math.floor(Math.random() * valuableTreasures.length)];
+      } else {
+        // 20% chance for special items
+        const specialItems: PickupType[] = ["crown", "scroll", "weapon"];
+        dropType = specialItems[Math.floor(Math.random() * specialItems.length)];
+      }
+      
+      this.pickups.push({
+        id: crypto.randomUUID().slice(0, 6),
+        type: dropType,
+        x: Math.max(20, Math.min(this.W - 20, dropX)),
+        y: Math.max(20, Math.min(this.H - 20, dropY))
+      });
+    }
+  }
+
+  publicBoss(boss: Boss) {
+    const visual = this.cfg.bosses.types[boss.type].visual;
+    return {
+      id: boss.id,
+      type: boss.type,
+      pos: boss.pos,
+      hp: boss.hp,
+      maxHp: boss.maxHp,
+      radius: boss.radius,
+      state: boss.state,
+      enraged: boss.enraged,
+      phased: boss.phased,
+      visual: visual
+    };
+  }
 }

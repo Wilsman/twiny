@@ -117,3 +117,80 @@ export interface BulletSpawnSpec {
 export type ActiveBullet = BulletSpawnSpec & { id: string };
 
 export type ZombieClass = "runner" | "brute" | "spitter" | "stalker" | "bomber";
+
+export type BossType = "necromancer" | "bruteKing" | "shadowLord";
+
+export interface Boss {
+  id: string;
+  type: BossType;
+  pos: { x: number; y: number };
+  vel: { x: number; y: number };
+  hp: number;
+  maxHp: number;
+  radius: number;
+  damage: number;
+  speed: number;
+  state: "spawning" | "idle" | "chasing" | "attacking" | "ability" | "dying";
+  targetId?: string;
+  lastSeen: number;
+  spawnTime: number;
+  
+  // Ability cooldowns
+  lastSummon?: number;
+  lastTeleport?: number;
+  lastPoisonField?: number;
+  lastCharge?: number;
+  lastGroundSlam?: number;
+  lastPhase?: number;
+  lastShadowClone?: number;
+  lastLifeDrain?: number;
+  
+  // State tracking
+  enraged?: boolean;
+  phased?: boolean;
+  phaseUntil?: number;
+  chargeUntil?: number;
+  chargeDirX?: number;
+  chargeDirY?: number;
+  stunUntil?: number;
+  
+  // Minions and clones
+  minionIds?: string[];
+  cloneIds?: string[];
+  
+  // Status effects
+  slowUntil?: number;
+  slowMul?: number;
+  burns?: Array<{ until: number; dps: number; nextTick: number; ownerId: string }>;
+  bleeds?: Array<{ until: number; dps: number; nextTick: number; ownerId: string }>;
+  
+  // Damage cooldown
+  lastDamage?: number;
+  
+  // Wandering AI
+  wanderTarget?: { x: number; y: number };
+}
+
+export interface BossMinion {
+  id: string;
+  bossId: string;
+  pos: { x: number; y: number };
+  vel: { x: number; y: number };
+  hp: number;
+  maxHp: number;
+  state: "idle" | "chasing" | "attacking";
+  targetId?: string;
+  lastSeen: number;
+  spawnTime: number;
+  expiresAt?: number;
+}
+
+export interface PoisonField {
+  id: string;
+  pos: { x: number; y: number };
+  radius: number;
+  dps: number;
+  createdAt: number;
+  expiresAt: number;
+  ownerId: string;
+}
