@@ -711,6 +711,21 @@ body.game {
   max-width: min(360px, 36vw);
 }
 
+.hud-bottom-right {
+  bottom: 20px;
+  right: 20px;
+  align-items: flex-end;
+  max-width: min(360px, 36vw);
+}
+
+.hud-middle-left {
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  align-items: flex-start;
+  max-width: min(360px, 36vw);
+}
+
 .hud-panel {
   pointer-events: auto;
 
@@ -735,6 +750,164 @@ body.game {
   );
 
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.46);
+}
+
+/* Segmented Health Bar */
+.health-bar-container {
+  margin-bottom: 8px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-icon {
+  font-size: 18px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  animation: healthIconPulse 2s ease-in-out infinite;
+}
+
+@keyframes healthIconPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.health-bar {
+  position: relative;
+  width: 200px;
+  height: 20px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.health-bar-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    rgba(40, 40, 40, 0.8) 0%, 
+    rgba(30, 30, 30, 0.8) 100%
+  );
+}
+
+.health-segments {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  z-index: 1;
+}
+
+.health-segment {
+  flex: 1;
+  margin-right: 1px;
+  background: linear-gradient(90deg, 
+    #4a9eff 0%, 
+    #6bb6ff 50%, 
+    #4a9eff 100%
+  );
+  border-radius: 2px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.health-segment:last-child {
+  margin-right: 0;
+}
+
+.health-segment.depleting {
+  animation: healthDeplete 0.4s ease-out forwards;
+}
+
+.health-segment.filling {
+  animation: healthFill 0.4s ease-out forwards;
+}
+
+.health-segment.low-health {
+  background: linear-gradient(90deg, 
+    #ff6b4a 0%, 
+    #ff8a6b 50%, 
+    #ff6b4a 100%
+  );
+}
+
+.health-segment.critical-health {
+  background: linear-gradient(90deg, 
+    #ff4a4a 0%, 
+    #ff6b6b 50%, 
+    #ff4a4a 100%
+  );
+  animation: criticalPulse 1s ease-in-out infinite alternate;
+}
+
+.health-segment::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.4) 50%, 
+    transparent 100%
+  );
+  transition: left 0.6s ease-out;
+}
+
+.health-segment.filling::before {
+  left: 100%;
+}
+
+@keyframes healthDeplete {
+  0% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scaleX(0.8);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+@keyframes healthFill {
+  0% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scaleX(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes criticalPulse {
+  0% {
+    box-shadow: inset 0 0 5px rgba(255, 74, 74, 0.5);
+  }
+  100% {
+    box-shadow: inset 0 0 15px rgba(255, 74, 74, 0.8);
+  }
 }
 
 .hud-panel-title {
@@ -902,4 +1075,278 @@ body.game {
 .hud-pill--right {
   justify-content: flex-end;
   text-align: right;
+}
+
+/* Death Screen */
+.death-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: deathScreenFadeIn 0.5s ease-out;
+}
+
+.death-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.95) 0%,
+    rgba(20, 0, 0, 0.9) 50%,
+    rgba(0, 0, 0, 0.95) 100%
+  );
+  backdrop-filter: blur(8px);
+}
+
+.death-content {
+  position: relative;
+  background: linear-gradient(
+    145deg,
+    rgba(15, 15, 20, 0.95) 0%,
+    rgba(25, 15, 15, 0.9) 100%
+  );
+  border: 2px solid rgba(255, 100, 100, 0.3);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: deathContentSlideIn 0.6s ease-out 0.2s both;
+}
+
+.death-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.death-title {
+  font-size: 3rem;
+  font-weight: bold;
+  color: #ff6b6b;
+  margin: 0 0 8px 0;
+  text-shadow: 
+    0 0 20px rgba(255, 107, 107, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.8);
+  animation: deathTitlePulse 2s ease-in-out infinite;
+}
+
+.death-subtitle {
+  font-size: 1.2rem;
+  color: #ccc;
+  font-weight: 300;
+}
+
+.death-stats {
+  margin-bottom: 32px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.stat-category {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.stat-category h3 {
+  color: #4a9eff;
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(74, 158, 255, 0.3);
+  padding-bottom: 8px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-item:last-child {
+  border-bottom: none;
+}
+
+.stat-label {
+  color: #bbb;
+  font-size: 0.95rem;
+}
+
+.stat-value {
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.upgrades-section, .enemy-breakdown {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.upgrades-section h3, .enemy-breakdown h3 {
+  color: #ffd700;
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+  padding-bottom: 8px;
+}
+
+.final-upgrades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upgrade-item {
+  background: linear-gradient(135deg, #4a9eff, #6bb6ff);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+}
+
+.upgrade-item.rare {
+  background: linear-gradient(135deg, #9c27b0, #ba68c8);
+  box-shadow: 0 2px 8px rgba(156, 39, 176, 0.3);
+}
+
+.upgrade-item.epic {
+  background: linear-gradient(135deg, #ff9800, #ffb74d);
+  box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
+}
+
+.upgrade-item.legendary {
+  background: linear-gradient(135deg, #f44336, #ef5350);
+  box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+}
+
+.no-upgrades {
+  color: #888;
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.enemy-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.enemy-type {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.enemy-name {
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.enemy-count {
+  color: #ff6b6b;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.death-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.death-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 160px;
+}
+
+.death-btn-primary {
+  background: linear-gradient(135deg, #4a9eff, #6bb6ff);
+  color: white;
+  box-shadow: 0 4px 16px rgba(74, 158, 255, 0.3);
+}
+
+.death-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(74, 158, 255, 0.4);
+}
+
+.death-btn-secondary {
+  background: linear-gradient(135deg, #666, #888);
+  color: white;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.death-btn-secondary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes deathScreenFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes deathContentSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes deathTitlePulse {
+  0%, 100% {
+    text-shadow: 
+      0 0 20px rgba(255, 107, 107, 0.5),
+      0 4px 8px rgba(0, 0, 0, 0.8);
+  }
+  50% {
+    text-shadow: 
+      0 0 30px rgba(255, 107, 107, 0.8),
+      0 4px 8px rgba(0, 0, 0, 0.8);
+  }
 }

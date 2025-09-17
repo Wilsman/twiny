@@ -194,3 +194,58 @@ export interface PoisonField {
   expiresAt: number;
   ownerId: string;
 }
+
+export interface RaidStats {
+  enemiesKilled: number;
+  bossesKilled: number;
+  bulletsFired: number;
+  bulletsHit: number;
+  coinsCollected: number;
+  pickupsTaken: number;
+  damageDealt: number;
+  damageTaken: number;
+  totalXPGained: number;
+  startTime: number;
+  enemyBreakdown: {
+    basic: number;
+    runner: number;
+    brute: number;
+    spitter: number;
+    stalker: number;
+    bomber: number;
+  };
+  bossesDefeated: string[]; // Array of boss names/types killed
+}
+
+export interface Player {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  hp?: number;
+  maxHp?: number;
+  score: number;
+  banked?: number;
+  role: "streamer" | "zombie";
+  alive: boolean;
+  weapon?: string;
+  pistolAmmo?: number;
+  smgAmmo?: number;
+  shotgunAmmo?: number;
+  weaponed?: boolean;
+  boosted?: boolean;
+  level?: number;
+  xp?: number;
+  xpForNext?: number;
+  mods?: Partial<Record<ModId, number>>;
+  zClass?: string;
+  emote?: string;
+  emoteUntil?: number;
+  meleeAt?: number;
+  meleeDirX?: number;
+  meleeDirY?: number;
+  dashing?: boolean;
+  dashReadyAt?: number;
+  lastDashAt?: number;
+  raidStats?: RaidStats;
+}

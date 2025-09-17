@@ -25,6 +25,12 @@
         <div class="stage">
           <div class="hud-layer">
             <div class="hud-stack hud-top-right">
+              <div class="hud-pill hud-pill--right">
+                <span>Score: <strong id="hudScore">0</strong></span>
+                <span>Banked: <strong id="hudBanked">0</strong></span>
+              </div>
+            </div>
+            <div class="hud-stack hud-middle-left">
               <div id="upgradeOverlay" class="hud-panel hidden">
                 <div class="hud-panel-title mono">Level Up! Choose an upgrade</div>
                 <div class="choices">
@@ -38,19 +44,21 @@
                 <div class="hud-panel-title">Current Upgrades</div>
                 <div class="hud-buff-list" id="buffList"></div>
               </div>
-              <div class="hud-pill hud-pill--right">
-                <span>Score: <strong id="hudScore">0</strong></span>
-                <span>Banked: <strong id="hudBanked">0</strong></span>
-              </div>
             </div>
             <div class="hud-stack hud-top-left">
               <div class="hud-pill">
-                <span>HP: <strong id="hudHp">0/0</strong></span>
                 <span>Level: <strong id="hudLevel">0</strong></span>
                 <span>XP: <strong id="hudXp">0/0</strong></span>
               </div>
             </div>
             <div class="hud-stack hud-bottom-left">
+              <div class="health-bar-container">
+                <div class="health-icon">❤️</div>
+                <div class="health-bar">
+                  <div class="health-segments" id="healthSegments"></div>
+                  <div class="health-bar-bg"></div>
+                </div>
+              </div>
               <div class="hud-pill">
                 <span>Weapon: <strong id="hudWeapon">--</strong></span>
                 <span>Ammo: <strong id="hudAmmo">0</strong></span>
@@ -129,6 +137,123 @@
       </aside>
     </div>
     <div class="hit-flash" id="flash"></div>
+    
+    <!-- Death Screen -->
+    <div id="deathScreen" class="death-screen hidden">
+      <div class="death-overlay"></div>
+      <div class="death-content">
+        <div class="death-header">
+          <h1 class="death-title">💀 RAID ENDED 💀</h1>
+          <div class="death-subtitle">Mission Statistics</div>
+        </div>
+        
+        <div class="death-stats">
+          <div class="stats-grid">
+            <div class="stat-category">
+              <h3>🎯 Combat Stats</h3>
+              <div class="stat-item">
+                <span class="stat-label">Enemies Killed:</span>
+                <span class="stat-value" id="deathEnemiesKilled">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Bosses Defeated:</span>
+                <span class="stat-value" id="deathBossesKilled">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Bullets Fired:</span>
+                <span class="stat-value" id="deathBulletsFired">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Accuracy:</span>
+                <span class="stat-value" id="deathAccuracy">0%</span>
+              </div>
+            </div>
+            
+            <div class="stat-category">
+              <h3>📊 Progression</h3>
+              <div class="stat-item">
+                <span class="stat-label">Level Reached:</span>
+                <span class="stat-value" id="deathLevel">1</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Total XP Gained:</span>
+                <span class="stat-value" id="deathTotalXP">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Final Score:</span>
+                <span class="stat-value" id="deathFinalScore">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Time Survived:</span>
+                <span class="stat-value" id="deathTimeSurvived">0:00</span>
+              </div>
+            </div>
+            
+            <div class="stat-category">
+              <h3>💰 Resources</h3>
+              <div class="stat-item">
+                <span class="stat-label">Coins Collected:</span>
+                <span class="stat-value" id="deathCoinsCollected">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Pickups Taken:</span>
+                <span class="stat-value" id="deathPickupsTaken">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Damage Dealt:</span>
+                <span class="stat-value" id="deathDamageDealt">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Damage Taken:</span>
+                <span class="stat-value" id="deathDamageTaken">0</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="upgrades-section">
+            <h3>⚡ Final Upgrades</h3>
+            <div class="final-upgrades" id="deathFinalUpgrades">
+              <div class="no-upgrades">No upgrades acquired</div>
+            </div>
+          </div>
+          
+          <div class="enemy-breakdown">
+            <h3>🧟 Enemy Breakdown</h3>
+            <div class="enemy-stats" id="deathEnemyBreakdown">
+              <div class="enemy-type">
+                <span class="enemy-name">Basic Zombies:</span>
+                <span class="enemy-count" id="deathBasicZombies">0</span>
+              </div>
+              <div class="enemy-type">
+                <span class="enemy-name">Runners:</span>
+                <span class="enemy-count" id="deathRunners">0</span>
+              </div>
+              <div class="enemy-type">
+                <span class="enemy-name">Brutes:</span>
+                <span class="enemy-count" id="deathBrutes">0</span>
+              </div>
+              <div class="enemy-type">
+                <span class="enemy-name">Spitters:</span>
+                <span class="enemy-count" id="deathSpitters">0</span>
+              </div>
+              <div class="enemy-type">
+                <span class="enemy-name">Stalkers:</span>
+                <span class="enemy-count" id="deathStalkers">0</span>
+              </div>
+              <div class="enemy-type">
+                <span class="enemy-name">Bombers:</span>
+                <span class="enemy-count" id="deathBombers">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="death-actions">
+          <button id="restartRaid" class="death-btn death-btn-primary">🔄 Restart Raid</button>
+          <button id="exitToMenu" class="death-btn death-btn-secondary">🏠 Exit to Menu</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module">
       import {
@@ -251,6 +376,10 @@
       const hudHpEl = document.getElementById("hudHp");
       const hudLevelEl = document.getElementById("hudLevel");
       const hudXpEl = document.getElementById("hudXp");
+      const healthSegmentsEl = document.getElementById("healthSegments");
+      const deathScreenEl = document.getElementById("deathScreen");
+      const restartRaidBtn = document.getElementById("restartRaid");
+      const exitToMenuBtn = document.getElementById("exitToMenu");
       // Nerd panel overlay element
       const nerdPanel = document.createElement("div");
       nerdPanel.id = "nerdPanel";
@@ -261,6 +390,158 @@
       const overlay = document.getElementById('upgradeOverlay');
       const choiceEls = Array.from(overlay.querySelectorAll('.choice'));
       let currentChoices = [];
+      let currentHealthSegments = 0;
+      let maxHealthSegments = 10;
+      let isPlayerDead = false;
+      let gameStartTime = Date.now();
+      let lastPlayerPos = { x: 0, y: 0 };
+
+      // Initialize segmented health bar
+      function initHealthBar(maxHp) {
+        maxHealthSegments = Math.max(5, Math.min(20, Math.ceil(maxHp / 10))); // 5-20 segments
+        healthSegmentsEl.innerHTML = '';
+        currentHealthSegments = maxHealthSegments;
+        
+        for (let i = 0; i < maxHealthSegments; i++) {
+          const segment = document.createElement('div');
+          segment.className = 'health-segment';
+          segment.dataset.index = i;
+          healthSegmentsEl.appendChild(segment);
+        }
+      }
+
+      // Update segmented health bar with smooth animations
+      function updateHealthBar(currentHp, maxHp) {
+        if (!healthSegmentsEl) return;
+        
+        const healthPercentage = Math.max(0, Math.min(1, currentHp / maxHp));
+        const targetSegments = Math.ceil(healthPercentage * maxHealthSegments);
+        const segments = healthSegmentsEl.querySelectorAll('.health-segment');
+        
+        // Determine health state colors
+        const lowHealthThreshold = 0.3;
+        const criticalHealthThreshold = 0.15;
+        
+        segments.forEach((segment, index) => {
+          const shouldBeActive = index < targetSegments;
+          const isCurrentlyActive = !segment.classList.contains('depleting') && 
+                                   segment.style.transform !== 'scaleX(0)';
+          
+          // Remove previous state classes
+          segment.classList.remove('depleting', 'filling', 'low-health', 'critical-health');
+          
+          if (shouldBeActive && !isCurrentlyActive) {
+            // Segment should fill
+            segment.classList.add('filling');
+            segment.style.transform = 'scaleX(1)';
+            segment.style.opacity = '1';
+          } else if (!shouldBeActive && isCurrentlyActive) {
+            // Segment should deplete
+            segment.classList.add('depleting');
+            setTimeout(() => {
+              segment.style.transform = 'scaleX(0)';
+              segment.style.opacity = '0';
+            }, 50);
+          }
+          
+          // Apply health state colors
+          if (shouldBeActive) {
+            if (healthPercentage <= criticalHealthThreshold) {
+              segment.classList.add('critical-health');
+            } else if (healthPercentage <= lowHealthThreshold) {
+              segment.classList.add('low-health');
+            }
+          }
+        });
+        
+        currentHealthSegments = targetSegments;
+      }
+
+      // Death screen functions
+      function showDeathScreen(playerStats) {
+        isPlayerDead = true;
+        
+        // Calculate time survived
+        const timeAlive = Date.now() - gameStartTime;
+        const minutes = Math.floor(timeAlive / 60000);
+        const seconds = Math.floor((timeAlive % 60000) / 1000);
+        
+        // Update death screen stats
+        document.getElementById('deathEnemiesKilled').textContent = playerStats.raidStats?.enemiesKilled || 0;
+        document.getElementById('deathBossesKilled').textContent = playerStats.raidStats?.bossesKilled || 0;
+        document.getElementById('deathBulletsFired').textContent = playerStats.raidStats?.bulletsFired || 0;
+        
+        const accuracy = playerStats.raidStats?.bulletsFired > 0 
+          ? Math.round((playerStats.raidStats.bulletsHit / playerStats.raidStats.bulletsFired) * 100)
+          : 0;
+        document.getElementById('deathAccuracy').textContent = accuracy + '%';
+        
+        document.getElementById('deathLevel').textContent = playerStats.level || 1;
+        document.getElementById('deathTotalXP').textContent = playerStats.raidStats?.totalXPGained || 0;
+        document.getElementById('deathFinalScore').textContent = playerStats.score || 0;
+        document.getElementById('deathTimeSurvived').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        document.getElementById('deathCoinsCollected').textContent = playerStats.raidStats?.coinsCollected || 0;
+        document.getElementById('deathPickupsTaken').textContent = playerStats.raidStats?.pickupsTaken || 0;
+        document.getElementById('deathDamageDealt').textContent = playerStats.raidStats?.damageDealt || 0;
+        document.getElementById('deathDamageTaken').textContent = playerStats.raidStats?.damageTaken || 0;
+        
+        // Enemy breakdown
+        const breakdown = playerStats.raidStats?.enemyBreakdown || {};
+        document.getElementById('deathBasicZombies').textContent = breakdown.basic || 0;
+        document.getElementById('deathRunners').textContent = breakdown.runner || 0;
+        document.getElementById('deathBrutes').textContent = breakdown.brute || 0;
+        document.getElementById('deathSpitters').textContent = breakdown.spitter || 0;
+        document.getElementById('deathStalkers').textContent = breakdown.stalker || 0;
+        document.getElementById('deathBombers').textContent = breakdown.bomber || 0;
+        
+        // Bosses defeated
+        const bossesDefeated = playerStats.raidStats?.bossesDefeated || [];
+        if (bossesDefeated.length > 0) {
+          console.log('Bosses defeated:', bossesDefeated.join(', '));
+        }
+        
+        // Final upgrades
+        const upgradesEl = document.getElementById('deathFinalUpgrades');
+        if (playerStats.mods && playerStats.mods.length > 0) {
+          upgradesEl.innerHTML = '';
+          playerStats.mods.forEach(mod => {
+            const upgradeEl = document.createElement('div');
+            upgradeEl.className = 'upgrade-item';
+            // Use the mod name if available, otherwise format the ID
+            const displayName = mod.name || mod.id.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            upgradeEl.textContent = `${displayName} x${mod.stacks}`;
+            upgradesEl.appendChild(upgradeEl);
+          });
+        } else {
+          upgradesEl.innerHTML = '<div class="no-upgrades">No upgrades acquired</div>';
+        }
+        
+        // Show the death screen
+        deathScreenEl.classList.remove('hidden');
+      }
+
+      function hideDeathScreen() {
+        deathScreenEl.classList.add('hidden');
+        isPlayerDead = false;
+      }
+
+      function restartRaid() {
+        hideDeathScreen();
+        gameStartTime = Date.now();
+        // Trigger a new room creation
+        if (ws && ws.readyState === 1) {
+          leaveRoom(true);
+        }
+        setTimeout(() => boot(), 100);
+      }
+
+      function exitToMenu() {
+        hideDeathScreen();
+        if (ws && ws.readyState === 1) {
+          leaveRoom(true);
+        }
+      }
 
       function showNextUpgrade() {
         if (!upgradeQueue.length) {
@@ -364,6 +645,12 @@
       let lastStateRateAt = performance.now();
       async function boot() {
         if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+        
+        // Reset death screen state
+        gameStartTime = Date.now();
+        isPlayerDead = false;
+        hideDeathScreen();
+        
         roomId = await create();
         const url = `${location.origin}/join.html?room=${roomId}`;
         link.value = url;
@@ -541,24 +828,16 @@
               }
               
               if (hudScoreEl) hudScoreEl.textContent = String(me.score ?? 0);
-if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
+              if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
               if (hudWeaponEl) hudWeaponEl.textContent = w;
               
-              // Update HUD HP with pulse effect
-              if (hudHpEl) {
-                const prevHudHpText = hudHpEl.textContent.split('/')[0];
-                const prevHudHp = parseInt(prevHudHpText) || maxHp;
-                const hudHpDecreased = hpVal < prevHudHp && prevHudHp <= maxHp;
-                
-                if (hudHpDecreased) {
-                  hudHpEl.classList.add('hud-hp-damage-pulse');
-                  setTimeout(() => {
-                    if (hudHpEl) hudHpEl.classList.remove('hud-hp-damage-pulse');
-                  }, 400);
-                }
-                
-                hudHpEl.innerHTML = `<span>${hpVal}</span>/<span>${maxHp}</span>`;
+              // Initialize health bar if not done yet
+              if (healthSegmentsEl && healthSegmentsEl.children.length === 0) {
+                initHealthBar(maxHp);
               }
+              
+              // Update segmented health bar
+              updateHealthBar(hpVal, maxHp);
               
               // Update HUD ammo counter with the same pulse effect
               if (hudAmmoEl) {
@@ -569,7 +848,7 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
                   setTimeout(() => hudAmmoEl.classList.remove('ammo-pulse'), 300);
                 }
               }
-              if (hudHpEl) hudHpEl.textContent = `${hpVal}/${maxHp}`;
+              // Health bar is now handled by updateHealthBar function
               if (hudLevelEl) hudLevelEl.textContent = String(level);
               if (hudXpEl) hudXpEl.textContent = `${xpVal}/${xpNeed}`;
               renderBuffs(me.mods || []);
@@ -613,7 +892,8 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
               if (hudBankedEl) hudBankedEl.textContent = '0';
               if (hudWeaponEl) hudWeaponEl.textContent = '--';
               if (hudAmmoEl) hudAmmoEl.textContent = '0';
-              if (hudHpEl) hudHpEl.textContent = '0/0';
+              // Clear health bar segments
+              if (healthSegmentsEl) healthSegmentsEl.innerHTML = '';
               if (hudLevelEl) hudLevelEl.textContent = '0';
               if (hudXpEl) hudXpEl.textContent = '0/0';
             }
@@ -640,6 +920,29 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
             if (me && (me.hp ?? 0) < lastHp) {
               flash();
             }
+            
+            // Check for death - only trigger death screen, don't auto-hide on respawn
+            if (me && (me.hp ?? 0) <= 0 && !isPlayerDead) {
+              console.log('Death detected! HP:', me.hp);
+              showDeathScreen(me);
+            }
+            
+            // Check for sudden teleportation (respawn after spike/poison death)
+            if (me && lastPlayerPos.x !== 0 && !isPlayerDead) {
+              const distMoved = Math.hypot(me.x - lastPlayerPos.x, me.y - lastPlayerPos.y);
+              const hpRestored = (me.hp ?? 0) > lastHp + 20; // HP significantly increased
+              
+              if (distMoved > 500 && hpRestored) {
+                console.log('Teleportation + HP restore detected - likely respawn! Distance:', distMoved, 'HP:', lastHp, '->', me.hp);
+                showDeathScreen(me);
+              }
+            }
+            
+            // Update last position
+            if (me) {
+              lastPlayerPos = { x: me.x, y: me.y };
+            }
+            
             lastScore = me ? me.score : lastScore;
             lastHp = me ? me.hp ?? lastHp : lastHp;
             lastStateTime = performance.now();
@@ -655,13 +958,22 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
               toast(msg.message);
             } catch {}
             appendChat("System", msg.message);
+            
+            // Check for respawn notice (pit death)
+            if (msg.message && msg.message.includes("💀 Fell into a pit! Respawning...") && !isPlayerDead) {
+              console.log('Pit death detected:', msg.message);
+              const me = state.players.find((p) => p.id === playerId);
+              if (me) {
+                showDeathScreen(me);
+              }
+            }
           }
           if (msg.type === 'upgrade_offer') {
             queueUpgrade(msg.choices || []);
           }
         });
         inputIv = setInterval(() => {
-          if (ws && ws.readyState === 1) {
+          if (ws && ws.readyState === 1 && !isPlayerDead) {
             // Convert screen aim to world coordinates via camera + zoom
             const aimWX = camX + input.aimX / zoom;
             const aimWY = camY + input.aimY / zoom;
@@ -703,7 +1015,7 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
 
         // If focus is lost, immediately send a neutral input (interval covers it, but faster feedback helps)
         sendNeutralHandler = () => {
-          if (ws && ws.readyState === 1) {
+          if (ws && ws.readyState === 1 && !isPlayerDead) {
             const aimWX = camX + input.aimX / zoom;
             const aimWY = camY + input.aimY / zoom;
             ws.send(
@@ -2225,9 +2537,16 @@ if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
           chatInput.value = "";
         }
       });
+
+      // Death screen button event listeners
+      if (restartRaidBtn) {
+        restartRaidBtn.addEventListener("click", restartRaid);
+      }
+      
+      if (exitToMenuBtn) {
+        exitToMenuBtn.addEventListener("click", exitToMenu);
+      }
+
     </script>
   </body>
 </html>
-
-
-

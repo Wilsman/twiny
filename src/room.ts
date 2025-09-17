@@ -365,6 +365,8 @@ export class RoomDO {
         // Enforce single-streamer per room. Downgrade to zombie if already present.
         if (role === "streamer") {
           p.level = 0; p.xp = 0; p.mods = {};
+          // Initialize raid stats
+          this.initRaidStats(p);
           const hasStreamer = [...this.players.values()].some(pl => pl.role === "streamer");
           if (hasStreamer) {
             role = "zombie";
@@ -664,6 +666,7 @@ export class RoomDO {
       if (dist <= radius) {
         const dmg = Math.round(damage * (1 - dist / radius));
         streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - dmg);
+        this.trackDamageTaken(streamer, dmg);
         this.broadcast('notification', { message: `Bomber explosion deals ${dmg} damage!` });
       }
     }
@@ -687,6 +690,7 @@ export class RoomDO {
       if (dist <= radius) {
         const dmg = Math.round(damage * (1 - dist / radius));
         streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - dmg);
+        this.trackDamageTaken(streamer, dmg);
       }
     }
     
@@ -881,6 +885,7 @@ export class RoomDO {
             if (p.role === 'streamer') {
               const damage = 8; // Moderate damage
               p.hp = Math.max(0, (p.hp ?? this.cfg.streamer.maxHp) - damage);
+              this.trackDamageTaken(p, damage);
               // Add damage number for spikes
               this.addDamageNumber(p.pos.x, p.pos.y, damage, false, true);
               this.broadcast("notice", { message: "🗡️ Stepped on spikes! Taking damage..." });
@@ -923,6 +928,7 @@ export class RoomDO {
             if (p.role === 'streamer') {
               const damage = 6; // Moderate damage
               p.hp = Math.max(0, (p.hp ?? this.cfg.streamer.maxHp) - damage);
+              this.trackDamageTaken(p, damage);
               // Add damage number for poison
               this.addDamageNumber(p.pos.x, p.pos.y, damage, false, true);
               const lastPoisonToast = (p as any).lastPoisonToast || 0;
@@ -1034,6 +1040,8 @@ export class RoomDO {
             }
             for (const sp of spawned) {
               this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+              // Track bullet fired
+              this.trackBulletFired(p);
             }
             p.pistolAmmo = Math.max(0, (p.pistolAmmo ?? 0) - ammoCost);
             p.lastShotAt = nowMs;
@@ -1069,7 +1077,11 @@ export class RoomDO {
             for (const [id, n] of Object.entries(p.mods||{})) {
               (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: this as any, playerId: p.id, bullets: spawned, stats: s });
             }
-            for (const sp of spawned) this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            for (const sp of spawned) {
+              this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+              // Track bullet fired
+              this.trackBulletFired(p);
+            }
             p.smgAmmo = Math.max(0, (p.smgAmmo ?? 0) - ammoCost);
             p.lastShotAt = nowMs;
           }
@@ -1106,7 +1118,11 @@ export class RoomDO {
             for (const [id, n] of Object.entries(p.mods||{})) {
               (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: this as any, playerId: p.id, bullets: spawned, stats: s });
             }
-            for (const sp of spawned) this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            for (const sp of spawned) {
+              this.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+              // Track bullet fired
+              this.trackBulletFired(p);
+            }
             p.shotgunAmmo = Math.max(0, (p.shotgunAmmo ?? 0) - ammoCost);
             p.lastShotAt = nowMs;
           }
@@ -1143,6 +1159,8 @@ export class RoomDO {
                 const id = z.id;
                 setTimeout(() => { const zp = this.players.get(id); if (zp) { zp.pos = this.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, this.cfg.combat.respawnMs);
                 p.score += 1;
+                // Track enemy kill
+                this.trackEnemyKill(p, 'basic');
               }
             }
           }
@@ -1194,6 +1212,11 @@ export class RoomDO {
           // Add damage number for bullet hit
           this.addDamageNumber(p.pos.x, p.pos.y, dealt, crit, false);
           const owner = this.players.get(b.ownerId);
+          // Track bullet hit
+          if (owner) {
+            this.trackBulletHit(owner);
+            this.trackDamageDealt(owner, dealt);
+          }
           const ownerStats = owner ? statsFor(owner).s : undefined;
           // Lifesteal on hit
           if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
@@ -1291,6 +1314,11 @@ export class RoomDO {
             // Add damage number for bullet hit on AI zombie
             this.addDamageNumber(zombie.pos.x, zombie.pos.y, dealt, crit, false);
             const owner = this.players.get(b.ownerId);
+            // Track bullet hit
+            if (owner) {
+              this.trackBulletHit(owner);
+              this.trackDamageDealt(owner, dealt);
+            }
             const ownerStats = owner ? statsFor(owner).s : undefined;
             // Lifesteal
             if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
@@ -1314,6 +1342,9 @@ export class RoomDO {
             if (wasKilled && owner && owner.role === 'streamer') {
               owner.score += 1;
               owner.xp = (owner.xp||0) + XP_PER_KILL;
+              // Track AI zombie kill
+              this.trackEnemyKill(owner, zombie.zClass || 'basic');
+              this.trackXPGained(owner, XP_PER_KILL);
               const need = XP_THRESHOLDS(owner.level||0);
               if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; this.offerUpgrades(owner.id); }
             }
@@ -1356,12 +1387,16 @@ export class RoomDO {
               }
               
               // Check if boss died
-              if (boss.hp <= 0 && boss.state !== "dying") {
+              if (boss.hp <= 0 && (boss.state as any) !== "dying") {
                 boss.state = "dying";
                 // Reward streamer for boss kill
                 if (owner && owner.role === 'streamer') {
+                  // Track boss kill
+                  this.trackBossKill(owner, boss.type);
                   owner.score += 10; // More points for boss kill
-                  owner.xp = (owner.xp||0) + (XP_PER_KILL * 5); // 5x XP for boss
+                  const bossXP = XP_PER_KILL * 5; // 5x XP for boss
+                  owner.xp = (owner.xp||0) + bossXP;
+                  this.trackXPGained(owner, bossXP);
                   const need = XP_THRESHOLDS(owner.level||0);
                   if ((owner.xp||0) >= need) {
                     owner.xp = (owner.xp||0) - need;
@@ -1419,6 +1454,7 @@ export class RoomDO {
           // apply slow and small damage
           (streamer as any).gooSlowUntil = now + this.cfg.zombies.spitter.slowMs;
           streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - this.cfg.zombies.spitter.hitDamage);
+          this.trackDamageTaken(streamer, this.cfg.zombies.spitter.hitDamage);
           continue; // glob consumed
         }
       }
@@ -1469,6 +1505,7 @@ export class RoomDO {
           if (!shielded && !isInvulnerable) {
             if ((streamer.hp ?? this.cfg.streamer.maxHp) > 0) {
               streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - this.cfg.combat.zombieTouchDamage);
+              this.trackDamageTaken(streamer, this.cfg.combat.zombieTouchDamage);
             }
             if ((streamer.hp ?? 0) <= 0) {
               // Handle explosive death before respawn
@@ -1505,6 +1542,7 @@ export class RoomDO {
           if (p.type === "health" && pl.role === "streamer") {
             pl.hp = Math.min(pl.maxHp ?? this.cfg.streamer.maxHp, (pl.hp ?? this.cfg.streamer.maxHp) + 20);
             this.broadcast("notice", { message: "❤️ Health restored!" });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "speed" && pl.role === "zombie") {
@@ -1516,6 +1554,7 @@ export class RoomDO {
             pl.smgAmmo = Math.min((pl.smgAmmo ?? 0) + this.cfg.weapons.ammo.pickupGain.smg, this.cfg.weapons.ammo.max.smg);
             pl.shotgunAmmo = Math.min((pl.shotgunAmmo ?? 0) + this.cfg.weapons.ammo.pickupGain.shotgun, this.cfg.weapons.ammo.max.shotgun);
             this.broadcast("notice", { message: "🔫 Ammo refilled for all weapons!" });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "weapon" && pl.role === "streamer") {
@@ -1528,21 +1567,25 @@ export class RoomDO {
               this.broadcast("notice", { message: "⚡ Weapon boost activated!" });
             }
             pl.weaponBoostUntil = now + this.cfg.effects.weaponBoostMs; // better weapon
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "shield" && pl.role === "streamer") {
             (pl as any).shieldUntil = now + this.cfg.effects.shieldMs; // shield
             this.broadcast("notice", { message: "🛡️ Shield activated - temporary invulnerability!" });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "magnet" && pl.role === "streamer") {
             (pl as any).magnetUntil = now + this.cfg.effects.magnetMs; // big pickup radius
             this.broadcast("notice", { message: "🧲 Magnet activated - larger pickup radius!" });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "freeze" && pl.role === "streamer") {
             this.zombieSlowUntil = now + this.cfg.effects.freezeMs; // slow zombies globally
             this.broadcast("notice", { message: "❄️ Freeze activated - all zombies slowed!" });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "blast" && pl.role === "streamer") {
@@ -1567,11 +1610,13 @@ export class RoomDO {
               }
             }
             this.broadcast("notice", { message: `💥 Blast killed ${zombiesHit} zombies!` });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "treasure" && pl.role === "streamer") {
             pl.score += this.cfg.pickups.treasureScore;
             this.broadcast("notice", { message: `💎 Treasure found! +${this.cfg.pickups.treasureScore} points` });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           // Handle new treasure types
@@ -1591,6 +1636,7 @@ export class RoomDO {
             };
             const name = treasureNames[p.type] || "💎 Treasure";
             this.broadcast("notice", { message: `${name} found! +${treasureValue} points` });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
           if (p.type === "key" && pl.role === "streamer") {
@@ -1602,6 +1648,7 @@ export class RoomDO {
               this.broadcast('map', { map: { w: this.map.w, h: this.map.h, size: this.map.size, theme: this.map.theme, tilesBase64: base64, props: this.map.props, lights: this.map.lights } });
             }
             this.broadcast("notice", { message: "🗝️ Key used! All doors are now open!" });
+            this.trackPickupTaken(pl, p.type);
             taken = true; break;
           }
         }
@@ -1953,6 +2000,7 @@ export class RoomDO {
     
     if ((streamer.hp ?? this.cfg.streamer.maxHp) > 0) {
       streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - this.cfg.combat.zombieTouchDamage);
+      this.trackDamageTaken(streamer, this.cfg.combat.zombieTouchDamage);
       // Add damage number for zombie hit on streamer
       this.addDamageNumber(streamer.pos.x, streamer.pos.y, this.cfg.combat.zombieTouchDamage, false, false);
     }
@@ -2106,6 +2154,7 @@ export class RoomDO {
         rarity: mod?.rarity || "common",
       };
     }),
+    raidStats: (p as any).raidStats || null,
   });
 
   // Optional effect used by some mods; small AoE damage on bullet hit
@@ -3087,6 +3136,7 @@ export class RoomDO {
         }
         
         streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+        this.trackDamageTaken(streamer, damage);
         this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, false);
         boss.lastDamage = now;
         
@@ -3279,6 +3329,7 @@ export class RoomDO {
     if (dist <= config.radius) {
       const damage = config.damage;
       streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+      this.trackDamageTaken(streamer, damage);
       this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, false);
       
       // Stun effect
@@ -3332,6 +3383,7 @@ export class RoomDO {
     const heal = Math.round(damage * config.healMul);
     
     streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+    this.trackDamageTaken(streamer, damage);
     boss.hp = Math.min(boss.maxHp, boss.hp + heal);
     
     this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, true);
@@ -3383,6 +3435,7 @@ export class RoomDO {
           if (dist < 20) {
             const damage = 15;
             streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+            this.trackDamageTaken(streamer, damage);
             this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, false);
           }
         }
@@ -3406,6 +3459,7 @@ export class RoomDO {
         if (dist <= field.radius) {
           const damage = Math.round(field.dps * (this.tickMs / 1000));
           streamer.hp = Math.max(0, (streamer.hp ?? this.cfg.streamer.maxHp) - damage);
+          this.trackDamageTaken(streamer, damage);
           this.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, true);
         }
       }
@@ -3464,7 +3518,7 @@ export class RoomDO {
     }
   }
 
-  publicBoss(boss: Boss) {
+  publicBoss(boss: any) {
     const visual = this.cfg.bosses.types[boss.type].visual;
     return {
       id: boss.id,
@@ -3478,5 +3532,122 @@ export class RoomDO {
       phased: boss.phased,
       visual: visual
     };
+  }
+
+  // Initialize raid stats for a player
+  initRaidStats(player: any): void {
+    console.log('Initializing raid stats for player:', player.id, player.name);
+    if (!player.raidStats) {
+      player.raidStats = {
+        enemiesKilled: 0,
+        bossesKilled: 0,
+        bulletsFired: 0,
+        bulletsHit: 0,
+        coinsCollected: 0,
+        pickupsTaken: 0,
+        damageDealt: 0,
+        damageTaken: 0,
+        totalXPGained: 0,
+        startTime: Date.now(),
+        enemyBreakdown: {
+          basic: 0,
+          runner: 0,
+          brute: 0,
+          spitter: 0,
+          stalker: 0,
+          bomber: 0
+        },
+        bossesDefeated: []
+      };
+    }
+  }
+
+  // Track enemy kill
+  trackEnemyKill(player: any, enemyType: string): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.enemiesKilled++;
+    console.log('Enemy killed! Type:', enemyType, 'Total kills:', player.raidStats!.enemiesKilled);
+    
+    // Track by enemy type
+    switch (enemyType) {
+      case 'runner':
+        player.raidStats!.enemyBreakdown.runner++;
+        break;
+      case 'brute':
+        player.raidStats!.enemyBreakdown.brute++;
+        break;
+      case 'spitter':
+        player.raidStats!.enemyBreakdown.spitter++;
+        break;
+      case 'stalker':
+        player.raidStats!.enemyBreakdown.stalker++;
+        break;
+      case 'bomber':
+        player.raidStats!.enemyBreakdown.bomber++;
+        break;
+      default:
+        player.raidStats!.enemyBreakdown.basic++;
+        break;
+    }
+  }
+
+  // Track boss kill
+  trackBossKill(player: any, bossType?: string): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.bossesKilled++;
+    if (bossType) {
+      player.raidStats!.bossesDefeated.push(bossType);
+    }
+  }
+
+  // Track bullet fired
+  trackBulletFired(player: any): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.bulletsFired++;
+    console.log('Bullet fired! Total:', player.raidStats!.bulletsFired);
+  }
+
+  // Track bullet hit
+  trackBulletHit(player: any): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.bulletsHit++;
+  }
+
+  // Track damage dealt
+  trackDamageDealt(player: any, damage: number): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.damageDealt += damage;
+  }
+
+  // Track damage taken
+  trackDamageTaken(player: any, damage: number): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.damageTaken += damage;
+    console.log('Damage taken! Amount:', damage, 'Total:', player.raidStats!.damageTaken);
+  }
+
+  // Track pickup taken
+  trackPickupTaken(player: any, pickupType: string): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.pickupsTaken++;
+    
+    if (pickupType.includes('coin') || pickupType.includes('gem') || 
+        pickupType.includes('crystal') || pickupType.includes('treasure')) {
+      player.raidStats!.coinsCollected++;
+    }
+  }
+
+  // Track XP gained
+  trackXPGained(player: any, xp: number): void {
+    if (player.role !== 'streamer') return; // Only track for streamers
+    if (!player.raidStats) this.initRaidStats(player);
+    player.raidStats!.totalXPGained += xp;
   }
 }
