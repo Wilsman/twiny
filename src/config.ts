@@ -11,7 +11,7 @@ export type GameConfig = {
     projectile: { pistol: { speed: number; ttl: number }; smg: { speed: number; ttl: number }; shotgun: { speed: number; ttl: number; pellets: number } };
     ammo: { initial: { pistol: number; smg: number; shotgun: number }; pickupGain: { pistol: number; smg: number; shotgun: number }; max: { pistol: number; smg: number; shotgun: number } };
   };
-  melee: { cooldownMs: number; reach: number; arcRad: number };
+  melee: { cooldownMs: number; reach: number; arcRad: number; knockbackStep: number };
   dash: { cooldownMs: number; durationMs: number; speedMultiplier: number };
   pickups: {
     spawnIntervalMs: number;
@@ -161,7 +161,7 @@ export const CONFIG: GameConfig = {
       max: { pistol: 120, smg: 240, shotgun: 48 },
     },
   },
-  melee: { cooldownMs: 500, reach: 28, arcRad: Math.PI / 1.8 },
+  melee: { cooldownMs: 500, reach: 32, arcRad: Math.PI / 1.2, knockbackStep: 8 },
   dash: { cooldownMs: 1000, durationMs: 180, speedMultiplier: 3.5 },
   pickups: {
     spawnIntervalMs: 12000,

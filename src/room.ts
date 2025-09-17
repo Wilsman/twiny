@@ -1134,24 +1134,59 @@ export class RoomDO {
         const since = nowMs - (p.lastMeleeAt || 0);
         const cd = this.cfg.melee.cooldownMs;
         if (since >= cd) {
-          const dirx = p.input.aimX - p.pos.x;
-          const diry = p.input.aimY - p.pos.y;
+          // Improved aim direction calculation with fallback
+          let dirx = p.input.aimX - p.pos.x;
+          let diry = p.input.aimY - p.pos.y;
+
+          // Fallback to last melee direction if aim is zero or invalid
+          if (Math.hypot(dirx, diry) < 1) {
+            if (p.meleeDirX !== undefined && p.meleeDirY !== undefined) {
+              dirx = p.meleeDirX;
+              diry = p.meleeDirY;
+            } else {
+              // Default to right if no previous direction
+              dirx = 1;
+              diry = 0;
+            }
+          }
+
           const d = Math.hypot(dirx, diry) || 1;
           const nx = dirx / d, ny = diry / d;
           p.meleeDirX = nx; p.meleeDirY = ny;
-          const reach = this.cfg.melee.reach; // px
+          const reach = this.cfg.melee.reach;
+
+          // Check PLAYER zombies for melee hits
           for (const z of this.players.values()){
             if (z.role !== "zombie" || !z.alive) continue;
-            const dx = z.pos.x - p.pos.x; const dy = z.pos.y - p.pos.y;
-            const dist = Math.hypot(dx,dy);
+            const dx = z.pos.x - p.pos.x;
+            const dy = z.pos.y - p.pos.y;
+            const dist = Math.hypot(dx, dy);
             if (dist > reach) continue;
-            const dot = (dx/dist||0)*nx + (dy/dist||0)*ny;
+
+            // Improved arc check - use dot product for cone attack
+            const zombieDirX = dx / dist;
+            const zombieDirY = dy / dist;
+            const dot = zombieDirX * nx + zombieDirY * ny;
+
+            // Wider arc check - zombie must be within the attack cone
             if (dot > Math.cos(this.cfg.melee.arcRad)) {
-              // Apply melee damage from config
+              // Apply melee damage
               const damage = this.cfg.weapons.damage.melee;
-              z.zHp = Math.max(0, (z.zHp ?? this.cfg.zombies.baseHp) - damage);
+              const oldHp = z.zHp ?? this.cfg.zombies.baseHp;
+              z.zHp = Math.max(0, oldHp - damage);
+
+              // Apply knockback - push zombie away from player
+              const knockbackDistance = this.cfg.melee.knockbackStep;
+              const newX = z.pos.x + zombieDirX * knockbackDistance;
+              const newY = z.pos.y + zombieDirY * knockbackDistance;
+
+              // Clamp to map bounds
+              z.pos.x = Math.max(0, Math.min(this.W, newX));
+              z.pos.y = Math.max(0, Math.min(this.H, newY));
+
               // Add damage number for melee
               this.addDamageNumber(z.pos.x, z.pos.y, damage, false, false);
+
               if ((z.zHp ?? 0) <= 0) {
                 z.alive = false;
                 // Drop ammo on zombie death
@@ -1164,9 +1199,77 @@ export class RoomDO {
               }
             }
           }
-          p.lastMeleeAt = nowMs;
+
+          // Check AI zombies for melee hits (same logic)
+          for (const zombie of this.aiZombies) {
+            const dx = zombie.pos.x - p.pos.x;
+            const dy = zombie.pos.y - p.pos.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > reach) continue;
+
+            // Same arc check as player zombies
+            const zombieDirX = dx / dist;
+            const zombieDirY = dy / dist;
+            const dot = zombieDirX * nx + zombieDirY * ny;
+
+            if (dot > Math.cos(this.cfg.melee.arcRad)) {
+              // Apply melee damage
+              const damage = this.cfg.weapons.damage.melee;
+              const oldHp = zombie.hp;
+              zombie.hp = Math.max(0, zombie.hp - damage);
+
+              // Apply knockback - push zombie away from player
+              const knockbackDistance = this.cfg.melee.knockbackStep;
+              const newX = zombie.pos.x + zombieDirX * knockbackDistance;
+              const newY = zombie.pos.y + zombieDirY * knockbackDistance;
+
+              // Clamp to map bounds
+              zombie.pos.x = Math.max(0, Math.min(this.W, newX));
+              zombie.pos.y = Math.max(0, Math.min(this.H, newY));
+
+              // Add damage number for melee
+              this.addDamageNumber(zombie.pos.x, zombie.pos.y, damage, false, false);
+
+              // Track bullet hit (reuse for melee)
+              this.trackBulletHit(p);
+              this.trackDamageDealt(p, damage);
+
+              // Handle AI zombie death
+              if (zombie.hp <= 0) {
+                // Drop random pickup (ammo or treasure)
+                const dropType = this.getRandomZombieDrop();
+                if (dropType) {
+                  this.pickups.push({
+                    id: crypto.randomUUID().slice(0, 6),
+                    type: dropType,
+                    x: zombie.pos.x,
+                    y: zombie.pos.y
+                  });
+                }
+
+                // Award points and XP for AI zombie kill
+                p.score += 1;
+                p.xp = (p.xp||0) + XP_PER_KILL;
+                this.trackEnemyKill(p, zombie.zClass || 'basic');
+                this.trackXPGained(p, XP_PER_KILL);
+
+                // Level up check
+                const need = XP_THRESHOLDS(p.level||0);
+                if ((p.xp||0) >= need) {
+                  p.xp = (p.xp||0) - need;
+                  p.level = (p.level||0) + 1;
+                  this.offerUpgrades(p.id);
+                }
+
+                // Remove dead AI zombie
+                const idx = this.aiZombies.indexOf(zombie);
+                if (idx >= 0) this.aiZombies.splice(idx, 1);
+              }
+            }
+          }
         }
       }
+
       // Reset pistol latch when trigger released
       if (p.role === "streamer" && !p.input.shoot) {
         if ((p as any)._pistolLatched) (p as any)._pistolLatched = false;

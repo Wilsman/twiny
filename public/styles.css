@@ -1158,6 +1158,19 @@ body.game {
   margin-bottom: 32px;
 }
 
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .stat-category {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1197,7 +1210,7 @@ body.game {
   font-size: 1rem;
 }
 
-.upgrades-section, .enemy-breakdown {
+.upgrades-section {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -1205,7 +1218,7 @@ body.game {
   margin-bottom: 24px;
 }
 
-.upgrades-section h3, .enemy-breakdown h3 {
+.upgrades-section h3 {
   color: #ffd700;
   margin: 0 0 16px 0;
   font-size: 1.1rem;
@@ -1253,9 +1266,9 @@ body.game {
 }
 
 .enemy-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .enemy-type {

@@ -148,7 +148,8 @@
         </div>
         
         <div class="death-stats">
-          <div class="stats-grid">
+          <!-- First Row: Combat Stats & Enemy Breakdown Side-by-Side -->
+          <div class="stats-row">
             <div class="stat-category">
               <h3>🎯 Combat Stats</h3>
               <div class="stat-item">
@@ -164,11 +165,52 @@
                 <span class="stat-value" id="deathBulletsFired">0</span>
               </div>
               <div class="stat-item">
+                <span class="stat-label">Damage Dealt:</span>
+                <span class="stat-value" id="deathDamageDealt">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Damage Taken:</span>
+                <span class="stat-value" id="deathDamageTaken">0</span>
+              </div>
+              <div class="stat-item">
                 <span class="stat-label">Accuracy:</span>
                 <span class="stat-value" id="deathAccuracy">0%</span>
               </div>
             </div>
             
+            <div class="stat-category">
+              <h3>🧟 Enemy Breakdown</h3>
+              <div class="enemy-stats" id="deathEnemyBreakdown">
+                <div class="enemy-type">
+                  <span class="enemy-name">Basic Zombies:</span>
+                  <span class="enemy-count" id="deathBasicZombies">0</span>
+                </div>
+                <div class="enemy-type">
+                  <span class="enemy-name">Runners:</span>
+                  <span class="enemy-count" id="deathRunners">0</span>
+                </div>
+                <div class="enemy-type">
+                  <span class="enemy-name">Brutes:</span>
+                  <span class="enemy-count" id="deathBrutes">0</span>
+                </div>
+                <div class="enemy-type">
+                  <span class="enemy-name">Spitters:</span>
+                  <span class="enemy-count" id="deathSpitters">0</span>
+                </div>
+                <div class="enemy-type">
+                  <span class="enemy-name">Stalkers:</span>
+                  <span class="enemy-count" id="deathStalkers">0</span>
+                </div>
+                <div class="enemy-type">
+                  <span class="enemy-name">Bombers:</span>
+                  <span class="enemy-count" id="deathBombers">0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Second Row: Progression & Resources Side-by-Side -->
+          <div class="stats-row">
             <div class="stat-category">
               <h3>📊 Progression</h3>
               <div class="stat-item">
@@ -199,51 +241,14 @@
                 <span class="stat-label">Pickups Taken:</span>
                 <span class="stat-value" id="deathPickupsTaken">0</span>
               </div>
-              <div class="stat-item">
-                <span class="stat-label">Damage Dealt:</span>
-                <span class="stat-value" id="deathDamageDealt">0</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">Damage Taken:</span>
-                <span class="stat-value" id="deathDamageTaken">0</span>
-              </div>
             </div>
           </div>
           
+          <!-- Final Upgrades Section (Full Width) -->
           <div class="upgrades-section">
             <h3>⚡ Final Upgrades</h3>
             <div class="final-upgrades" id="deathFinalUpgrades">
               <div class="no-upgrades">No upgrades acquired</div>
-            </div>
-          </div>
-          
-          <div class="enemy-breakdown">
-            <h3>🧟 Enemy Breakdown</h3>
-            <div class="enemy-stats" id="deathEnemyBreakdown">
-              <div class="enemy-type">
-                <span class="enemy-name">Basic Zombies:</span>
-                <span class="enemy-count" id="deathBasicZombies">0</span>
-              </div>
-              <div class="enemy-type">
-                <span class="enemy-name">Runners:</span>
-                <span class="enemy-count" id="deathRunners">0</span>
-              </div>
-              <div class="enemy-type">
-                <span class="enemy-name">Brutes:</span>
-                <span class="enemy-count" id="deathBrutes">0</span>
-              </div>
-              <div class="enemy-type">
-                <span class="enemy-name">Spitters:</span>
-                <span class="enemy-count" id="deathSpitters">0</span>
-              </div>
-              <div class="enemy-type">
-                <span class="enemy-name">Stalkers:</span>
-                <span class="enemy-count" id="deathStalkers">0</span>
-              </div>
-              <div class="enemy-type">
-                <span class="enemy-name">Bombers:</span>
-                <span class="enemy-count" id="deathBombers">0</span>
-              </div>
             </div>
           </div>
         </div>
