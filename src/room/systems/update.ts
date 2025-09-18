@@ -429,6 +429,10 @@ export function update(ctx: RoomDO) {
       const since = nowMs - (p.lastMeleeAt || 0);
       const cd = ctx.cfg.melee.cooldownMs;
       if (since >= cd) {
+        // Set melee timing and create hit tracking set
+        p.lastMeleeAt = nowMs;
+        const hitIds = new Set<string>();
+        
         // Improved aim direction calculation with fallback
         let dirx = p.input.aimX - p.pos.x;
         let diry = p.input.aimY - p.pos.y;
@@ -449,10 +453,14 @@ export function update(ctx: RoomDO) {
         const nx = dirx / d, ny = diry / d;
         p.meleeDirX = nx; p.meleeDirY = ny;
         const reach = ctx.cfg.melee.reach;
+        
+        let hasHitConfirm = false;
 
         // Check PLAYER zombies for melee hits
         for (const z of ctx.players.values()){
           if (z.role !== "zombie" || !z.alive) continue;
+          if (hitIds.has(z.id)) continue; // Skip if already hit this swing
+          
           const dx = z.pos.x - p.pos.x;
           const dy = z.pos.y - p.pos.y;
           const dist = Math.hypot(dx, dy);
@@ -481,6 +489,13 @@ export function update(ctx: RoomDO) {
 
             // Add damage number for melee
             ctx.addDamageNumber(z.pos.x, z.pos.y, damage, false, false);
+            
+            // Mark this target as hit and trigger hit confirm on first hit
+            hitIds.add(z.id);
+            if (!hasHitConfirm) {
+              ctx.hitConfirm(p.pos.x, p.pos.y);
+              hasHitConfirm = true;
+            }
 
             if ((z.zHp ?? 0) <= 0) {
               z.alive = false;
@@ -497,6 +512,9 @@ export function update(ctx: RoomDO) {
 
         // Check AI zombies for melee hits (same logic)
         for (const zombie of ctx.aiZombies) {
+          const aiId = `ai:${zombie.id}`;
+          if (hitIds.has(aiId)) continue; // Skip if already hit this swing
+          
           const dx = zombie.pos.x - p.pos.x;
           const dy = zombie.pos.y - p.pos.y;
           const dist = Math.hypot(dx, dy);
@@ -528,6 +546,13 @@ export function update(ctx: RoomDO) {
             // Track bullet hit (reuse for melee)
             ctx.trackBulletHit(p);
             ctx.trackDamageDealt(p, damage);
+            
+            // Mark this target as hit and trigger hit confirm on first hit
+            hitIds.add(aiId);
+            if (!hasHitConfirm) {
+              ctx.hitConfirm(p.pos.x, p.pos.y);
+              hasHitConfirm = true;
+            }
 
             // Handle AI zombie death
             if (zombie.hp <= 0) {

@@ -1,5 +1,6 @@
 import type { RoomDO } from '../index';
 import type { Player, AIZombie, Vec } from '../room-types';
+import { TileId } from '../../config';
 
 
 export function spawnAIZombiesIfNeeded(ctx: RoomDO, now: number) {
@@ -83,7 +84,7 @@ export function updateAIZombies(ctx: RoomDO, now: number) {
         if (distToStreamer > zombie.chaseRange) {
           zombie.state = "idle";
           zombie.targetId = undefined;
-        } else if (distToStreamer <= 20) {
+        } else if (distToStreamer <= 35) { // Increased attack range
           zombie.state = "attacking";
           zombie.lastAttack = now;
         } else if (hasLineOfSight) {
@@ -92,9 +93,9 @@ export function updateAIZombies(ctx: RoomDO, now: number) {
         break;
         
       case "attacking":
-        if (distToStreamer > 30) {
+        if (distToStreamer > 50) { // Larger hysteresis to prevent oscillation
           zombie.state = "chasing";
-        } else if (now - zombie.lastAttack > 1000) { // Attack every second
+        } else if (now - zombie.lastAttack > 1200) { // Slightly slower attacks (1.2s)
           ctx.aiZombieAttackStreamer(zombie, streamer, now);
           zombie.lastAttack = now;
         }
@@ -164,8 +165,19 @@ export function updateAIZombieMovement(ctx: RoomDO, zombie: AIZombie, streamer: 
     let speed = (ctx.zombieSlowUntil || 0) > now ? baseSpeed * ctx.cfg.speeds.zombieSlowMultiplier : baseSpeed;
     if ((zombie.slowUntil || 0) > now) speed *= Math.max(0.05, zombie.slowMul || 1);
     
-    zombie.vel.x = (dx / distance) * speed;
-    zombie.vel.y = (dy / distance) * speed;
+    // Reduce speed when in attacking state and very close to prevent overshooting
+    if (zombie.state === "attacking" && distance < 40) {
+      speed *= Math.max(0.2, distance / 40); // Slow down as we get closer
+    }
+    
+    // Add some stopping distance to prevent constant movement when attacking
+    if (zombie.state === "attacking" && distance < 25) {
+      zombie.vel.x = 0;
+      zombie.vel.y = 0;
+    } else {
+      zombie.vel.x = (dx / distance) * speed;
+      zombie.vel.y = (dy / distance) * speed;
+    }
   }
 
 }

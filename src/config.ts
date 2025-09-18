@@ -137,7 +137,7 @@ export const CONFIG: GameConfig = {
   round: { durationMs: 5 * 60 * 1000 },
   speeds: { streamer: 175, zombie: 65, zombieBoostMultiplier: 1.75, zombieSlowMultiplier: 0.55 },
   streamer: { maxHp: 100 },
-  combat: { zombieTouchDamage: 10, knockbackStep: 12, respawnMs: 800 },
+  combat: { zombieTouchDamage: 10, knockbackStep: 15, respawnMs: 800 },
   weapons: {
     damage: {
       pistol: 100,
@@ -161,7 +161,7 @@ export const CONFIG: GameConfig = {
       max: { pistol: 120, smg: 240, shotgun: 48 },
     },
   },
-  melee: { cooldownMs: 500, reach: 32, arcRad: Math.PI / 1.2, knockbackStep: 8 },
+  melee: { cooldownMs: 500, reach: 32, arcRad: Math.PI / 1.2, knockbackStep: 20 },
   dash: { cooldownMs: 1000, durationMs: 180, speedMultiplier: 3.5 },
   pickups: {
     spawnIntervalMs: 12000,

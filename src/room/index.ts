@@ -23,7 +23,7 @@ export interface Env {
 
 import { XP_THRESHOLDS, MOD_INDEX, statsFor } from '../upgrades';
 import type { ActiveBullet, BulletSpawnSpec, Boss, BossMinion, PoisonField, BossType, ModId } from '../types';
-import type { Vec, Input, Player, Rect, Pickup, PickupType, AIZombie } from './room-types';
+import type { Vec, Input, Player, Rect, Pickup, PickupType, AIZombie, Extraction } from './room-types';
 
 type Bullet = ActiveBullet;
 
@@ -942,6 +942,13 @@ export class RoomDO {
   // Track XP gained
   trackXPGained(player: any, xp: number): void {
     return trackXPGainedImpl(this, player, xp);
+  }
+
+  // Hit confirm helper for melee hitstop/FX
+  hitConfirm(x: number, y: number): void {
+    // Trigger hitstop/visual effects at the hit location
+    // This can be expanded to add screen shake, particle effects, etc.
+    this.broadcast("hit_confirm", { x, y, timestamp: Date.now() });
   }
 
 }
