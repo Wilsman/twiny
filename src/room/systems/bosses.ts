@@ -566,7 +566,7 @@ export function generateBossLoot(ctx: RoomDO, boss: Boss) {
       dropType = valuableTreasures[Math.floor(Math.random() * valuableTreasures.length)];
     } else {
       // 20% chance for special items
-      const specialItems: PickupType[] = ["crown", "scroll", "weapon"];
+      const specialItems: PickupType[] = ["crown", "scroll"];
       dropType = specialItems[Math.floor(Math.random() * specialItems.length)];
     }
     
@@ -577,6 +577,17 @@ export function generateBossLoot(ctx: RoomDO, boss: Boss) {
       y: Math.max(20, Math.min(ctx.H - 20, dropY))
     });
   }
+
+  const streamer = [...ctx.players.values()].find(p => p.role === "streamer");
+  const exclude = new Set<string>();
+  if (streamer?.weapon) exclude.add(streamer.weapon);
+  const weaponDrop = ctx.chooseWeapon(exclude);
+  const wAngle = Math.random() * Math.PI * 2;
+  const wRadius = 40 + Math.random() * 60;
+  const wx = boss.pos.x + Math.cos(wAngle) * wRadius;
+  const wy = boss.pos.y + Math.sin(wAngle) * wRadius;
+  const initAmmo = (ctx.cfg.weapons.ammo.initial as any)[weaponDrop] ?? 0;
+  ctx.spawnWeaponDrop(weaponDrop, wx, wy, initAmmo, 'boss');
 
 }
 

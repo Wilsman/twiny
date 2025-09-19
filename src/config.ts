@@ -189,7 +189,7 @@ export const CONFIG: GameConfig = {
     spawnIntervalMs: 12000,
     totalCap: 12,
     minDistance: 48,
-    caps: { health: 3, speed: 3, ammo: 3, weapon: 2, shield: 2, magnet: 2, freeze: 1, blast: 2, treasure: 3, key: 1 },
+    caps: { health: 3, speed: 3, ammo: 3, shield: 2, magnet: 2, freeze: 1, blast: 2, treasure: 3, key: 1 },
     treasureScore: 3,
     blastRadius: 90,
   },

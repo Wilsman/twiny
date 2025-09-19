@@ -1,12 +1,14 @@
 import type { RoomDO } from '../index';
 import { XP_PER_KILL, XP_THRESHOLDS, statsFor, statusFrom, MOD_INDEX } from '../../upgrades';
-import type { Bullet, Player, Pickup, PickupType, Vec, Rect } from '../room-types';
+import type { Bullet, Player, Pickup, PickupType, Vec, Rect, WeaponDrop } from '../room-types';
 import type { BulletSpawnSpec } from '../../types';
 import { TileId } from '../../config';
 
 
 export function update(ctx: RoomDO) {
   const now = Date.now();
+
+  let streamer = [...ctx.players.values()].find(p => p.role === "streamer");
 
   if (!ctx.roundActive) {
     return;
@@ -24,6 +26,23 @@ export function update(ctx: RoomDO) {
   
   // Process zombie special abilities
   ctx.processZombieAbilities(now);
+  if (ctx.nextWeaponDropAt <= now) {
+    if (ctx.weaponDrops.length >= ctx.maxWeaponDrops) {
+      ctx.scheduleNextWeaponDrop(now, true);
+    } else {
+      const exclude = new Set<string>();
+      if (streamer?.weapon) exclude.add(streamer.weapon);
+      const weapon = ctx.chooseWeapon(exclude);
+      const pos = ctx.randomFreePos(36);
+      if (pos) {
+        const initAmmo = (ctx.cfg.weapons.ammo.initial as any)[weapon] ?? 0;
+        ctx.spawnWeaponDrop(weapon, pos.x, pos.y, initAmmo, 'spawn');
+        ctx.scheduleNextWeaponDrop(now);
+      } else {
+        ctx.scheduleNextWeaponDrop(now, true);
+      }
+    }
+  }
 
   // Extractions removed
 
@@ -942,7 +961,7 @@ export function update(ctx: RoomDO) {
   ctx.processDotEffects(now);
 
   // Find streamer at the start of the update
-  const streamer = [...ctx.players.values()].find(p => p.role === "streamer");
+  streamer = [...ctx.players.values()].find(p => p.role === "streamer");
 
   // Update spitter globs
   const aliveGlobs: typeof ctx.spittles = [];
@@ -1117,6 +1136,13 @@ export function update(ctx: RoomDO) {
           pl.score += ctx.cfg.pickups.treasureScore;
           ctx.broadcast("notice", { message: `Gem Treasure found! +${ctx.cfg.pickups.treasureScore} points` });
           ctx.trackPickupTaken(pl, p.type);
+          if (streamer && Math.random() < 0.35) {
+            const exclude = new Set<string>();
+            if (streamer.weapon) exclude.add(streamer.weapon);
+            const weaponDrop = ctx.chooseWeapon(exclude);
+            const initAmmo = (ctx.cfg.weapons.ammo.initial as any)[weaponDrop] ?? 0;
+            ctx.spawnWeaponDrop(weaponDrop, p.x, p.y, initAmmo, 'treasure');
+          }
           taken = true; break;
         }
         // Handle new treasure types
@@ -1137,6 +1163,13 @@ export function update(ctx: RoomDO) {
           const name = treasureNames[p.type] || "Gem Treasure";
           ctx.broadcast("notice", { message: `${name} found! +${treasureValue} points` });
           ctx.trackPickupTaken(pl, p.type);
+          if (streamer && Math.random() < 0.2) {
+            const exclude = new Set<string>();
+            if (streamer.weapon) exclude.add(streamer.weapon);
+            const weaponDrop = ctx.chooseWeapon(exclude);
+            const initAmmo = (ctx.cfg.weapons.ammo.initial as any)[weaponDrop] ?? 0;
+            ctx.spawnWeaponDrop(weaponDrop, p.x, p.y, initAmmo, 'treasure');
+          }
           taken = true; break;
         }
         if (p.type === "key" && pl.role === "streamer") {
@@ -1157,9 +1190,32 @@ export function update(ctx: RoomDO) {
   }
   ctx.pickups = remaining;
 
+  if (streamer) {
+    const interactDown = !!streamer.input.interact;
+    const latched = !!(streamer as any)._interactLatched;
+    const interactPressed = interactDown && !latched;
+    if (interactDown) {
+      (streamer as any)._interactLatched = true;
+    } else if (latched) {
+      (streamer as any)._interactLatched = false;
+    }
+
+    const swapRadius = 26;
+    const keptDrops: WeaponDrop[] = [];
+    for (const drop of ctx.weaponDrops) {
+      const dist = Math.hypot(streamer.pos.x - drop.x, streamer.pos.y - drop.y);
+      if (dist < swapRadius && interactPressed) {
+        ctx.performWeaponSwap(streamer, drop);
+        continue;
+      }
+      keptDrops.push(drop);
+    }
+    ctx.weaponDrops = keptDrops;
+  }
+
   // Extractions removed
 
-  const streamerPlayer = [...ctx.players.values()].find(p => p.role === "streamer");
+  const streamerPlayer = streamer;
 
   // Round timer: end raid when time elapses
   if ((ctx.roundEndTime || 0) > 0 && now >= (ctx.roundEndTime as number)) {

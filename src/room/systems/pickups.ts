@@ -9,9 +9,9 @@ export function checkPickupSpawning(ctx: RoomDO) {
     const totalCap = ctx.cfg.pickups.totalCap;
     if (ctx.pickups.length < totalCap) {
       const caps = ctx.cfg.pickups.caps as Record<PickupType, number>;
-      const counts = { health:0, speed:0, ammo:0, weapon:0, shield:0, magnet:0, freeze:0, blast:0, treasure:0 } as Record<PickupType, number>;
+      const counts = { health:0, speed:0, ammo:0, shield:0, magnet:0, freeze:0, blast:0, treasure:0 } as Record<PickupType, number>;
       for (const pk of ctx.pickups) counts[pk.type]++;
-      const types: PickupType[] = ["health","speed","ammo","weapon","shield","magnet","freeze","blast","treasure"]; 
+      const types: PickupType[] = ["health","speed","ammo","shield","magnet","freeze","blast","treasure"]; 
       // Weighted pick: prefer under-cap types
       const options: PickupType[] = [];
       for (const t of types){

@@ -1468,3 +1468,24 @@ body.game {
       0 4px 8px rgba(0, 0, 0, 0.8);
   }
 }
+.swap-prompt {
+  position: absolute;
+  bottom: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 12, 16, 0.88);
+  color: #ffe48f;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 30;
+}
+.swap-prompt.show {
+  opacity: 1;
+}

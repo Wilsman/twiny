@@ -23,7 +23,7 @@ export interface Env {
 
 import { XP_THRESHOLDS, MOD_INDEX, statsFor } from '../upgrades';
 import type { ActiveBullet, BulletSpawnSpec, Boss, BossMinion, PoisonField, BossType, ModId } from '../types';
-import type { Vec, Input, Player, Rect, Pickup, PickupType, AIZombie, Extraction } from './room-types';
+import type { Vec, Input, Player, Rect, Pickup, PickupType, AIZombie, Extraction, WeaponDrop } from './room-types';
 
 type Bullet = ActiveBullet;
 
@@ -60,6 +60,10 @@ export class RoomDO {
   spittles: Array<{ id: string; pos: Vec; vel: Vec; ttl: number } > = [];
   walls: Rect[] = [];
   pickups: Pickup[] = [];
+  weaponDrops: WeaponDrop[] = [];
+  weaponDropIntervalMs = 35000;
+  maxWeaponDrops = 4;
+  nextWeaponDropAt = 0;
   // M1: extractions and optional future zones
   extractions: Extraction[] = [];
   midSafeZones: Rect[] = [];
@@ -198,6 +202,7 @@ export class RoomDO {
       this.pickupTimer = setTimeout(pickupStep, this.pickupTickMs) as unknown as number;
     };
     this.pickupTimer = setTimeout(pickupStep, this.pickupTickMs) as unknown as number;
+    this.scheduleNextWeaponDrop(Date.now(), true);
   }
 
   stopLoop() {
@@ -266,7 +271,9 @@ export class RoomDO {
     this.bullets = [];
     this.spittles = [];
     this.pickups = [];
+    this.weaponDrops = [];
     this.aiZombies = [];
+    this.scheduleNextWeaponDrop(Date.now(), true);
     this.bosses = [];
     this.bossMinions = [];
     this.poisonFields = [];
@@ -451,6 +458,7 @@ export class RoomDO {
             aimY: Number(msg.aimY) || 0,
             melee: !!msg.melee,
             dash: !!msg.dash,
+            interact: !!msg.interact,
           }, msg.timestamp || now);
           
           p.lastSeen = now;
@@ -492,41 +500,7 @@ export class RoomDO {
           break;
         }
         case "buy": {
-          const p = this.players.get(pid);
-          if (!p || p.role !== 'streamer') return;
-          const item = String(msg.item||'');
-          const costs: Record<string, number> = { shotgun: 300, smg: 300, railgun: 600, flamethrower: 450 };
-          const cost = costs[item];
-          if (!cost) return;
-          const bank = p.banked || 0;
-          if (bank < cost) {
-            const msgText = 'Not enough banked (need ' + cost + ')';
-            try { p.ws?.send(JSON.stringify({ type:'notice', message: msgText })); } catch {}
-            return;
-          }
-          p.banked = bank - cost;
-          const initial = this.cfg.weapons.ammo.initial;
-          let announcement = '';
-          if (item === 'shotgun') {
-            p.weapon = 'shotgun';
-            p.shotgunAmmo = Math.max(p.shotgunAmmo||0, initial.shotgun);
-            announcement = p.name + ' purchased Shotgun! (-' + cost + ' banked)';
-          } else if (item === 'smg') {
-            p.weapon = 'smg';
-            p.smgAmmo = Math.max(p.smgAmmo||0, initial.smg);
-            announcement = p.name + ' purchased SMG! (-' + cost + ' banked)';
-          } else if (item === 'railgun') {
-            p.weapon = 'railgun';
-            p.railgunAmmo = Math.max(p.railgunAmmo||0, initial.railgun);
-            announcement = p.name + ' unlocked Railgun! (-' + cost + ' banked)';
-          } else if (item === 'flamethrower') {
-            p.weapon = 'flamethrower';
-            p.flamethrowerAmmo = Math.max(p.flamethrowerAmmo||0, initial.flamethrower);
-            announcement = p.name + ' unlocked Flamethrower! (-' + cost + ' banked)';
-          }
-          if (announcement) {
-            this.broadcast('notice', { message: announcement });
-          }
+          // weapon purchases disabled in drop-based mode
           break;
         }
         case 'choose_upgrade': {
@@ -550,12 +524,6 @@ export class RoomDO {
           break;
         }
         case "switch_weapon": {
-          const p = this.players.get(pid);
-          if (!p || p.role !== "streamer") return;
-          const w = String(msg.weapon || "");
-          if (w === "pistol" || w === "smg" || w === "shotgun" || w === "railgun" || w === "flamethrower" || w === "bat") {
-            p.weapon = w;
-          }
           break;
         }
         // attempt_extract removed
@@ -869,9 +837,172 @@ export class RoomDO {
   }
 
   okDistanceFromPickups(x:number,y:number,minD:number){
+
     for (const p of this.pickups){ if (Math.hypot(x-p.x,y-p.y) < minD) return false; }
+
+    for (const w of this.weaponDrops){ if (Math.hypot(x-w.x,y-w.y) < minD) return false; }
+
     return true;
+
   }
+
+
+
+  chooseWeapon(exclude?: Set<string>): 'smg' | 'shotgun' | 'railgun' | 'flamethrower' {
+    const pool: Array<'smg' | 'shotgun' | 'railgun' | 'flamethrower'> = ['smg', 'shotgun', 'railgun', 'flamethrower'];
+    if (exclude && exclude.size) {
+      const filtered = pool.filter(w => !exclude.has(w));
+      if (filtered.length) return filtered[Math.floor(Math.random() * filtered.length)];
+    }
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  weaponAmmoKey(weapon: string): keyof Player | null {
+
+    switch (weapon) {
+
+      case 'pistol': return 'pistolAmmo';
+
+      case 'smg': return 'smgAmmo';
+
+      case 'shotgun': return 'shotgunAmmo';
+
+      case 'railgun': return 'railgunAmmo';
+
+      case 'flamethrower': return 'flamethrowerAmmo';
+
+      default: return null;
+
+    }
+
+  }
+
+
+
+  scheduleNextWeaponDrop(now: number, immediate = false) {
+    const base = immediate ? 8000 : this.weaponDropIntervalMs;
+    const jitter = immediate ? 0 : Math.floor(Math.random() * 12000);
+    this.nextWeaponDropAt = now + base + jitter;
+  }
+
+  spawnWeaponDrop(weapon: string, x: number, y: number, ammo: number | undefined = undefined, source: 'boss' | 'treasure' | 'swap' | 'spawn' = 'spawn') {
+
+    const ammoKey = this.weaponAmmoKey(weapon);
+
+    const safeX = Math.max(24, Math.min(this.W - 24, x));
+
+    const safeY = Math.max(24, Math.min(this.H - 24, y));
+
+    const maxAmmo = ammoKey ? ((this.cfg.weapons.ammo.max as any)[weapon] ?? 0) : 0;
+
+    const initialAmmo = ammoKey ? ((this.cfg.weapons.ammo.initial as any)[weapon] ?? 0) : 0;
+
+    const resolvedAmmo = ammoKey ? (ammo ?? initialAmmo) : 0;
+
+    const drop: WeaponDrop = {
+
+      id: crypto.randomUUID().slice(0,6),
+
+      weapon: weapon as any,
+
+      ammo: ammoKey ? Math.max(0, Math.min(maxAmmo, resolvedAmmo)) : 0,
+
+      x: safeX,
+
+      y: safeY,
+
+      source,
+
+    };
+
+    let attempts = 0;
+
+    while (this.weaponDrops.some(w => Math.hypot(w.x - drop.x, w.y - drop.y) < 24) && attempts < 8) {
+
+      const angle = Math.random() * Math.PI * 2;
+
+      const radius = 18 + Math.random() * 36;
+
+      drop.x = Math.max(24, Math.min(this.W - 24, safeX + Math.cos(angle) * radius));
+
+      drop.y = Math.max(24, Math.min(this.H - 24, safeY + Math.sin(angle) * radius));
+
+      attempts++;
+
+    }
+
+    if (this.weaponDrops.length > 20) this.weaponDrops.shift();
+    this.weaponDrops.push(drop);
+
+  }
+
+
+
+  performWeaponSwap(streamer: Player, drop: WeaponDrop) {
+
+    const currentWeapon = streamer.weapon || 'pistol';
+
+    const targetWeapon = drop.weapon;
+
+
+
+    if (targetWeapon === currentWeapon) {
+
+      const ammoKey = this.weaponAmmoKey(targetWeapon);
+
+      if (ammoKey) {
+
+        const maxAmmo = (this.cfg.weapons.ammo.max as any)[targetWeapon] ?? 0;
+
+        const currentAmmo = (streamer as any)[ammoKey] ?? 0;
+
+        (streamer as any)[ammoKey] = Math.max(0, Math.min(maxAmmo, currentAmmo + drop.ammo));
+
+      }
+
+      return;
+
+    }
+
+
+
+    const prevAmmoKey = this.weaponAmmoKey(currentWeapon);
+
+    const prevAmmo = prevAmmoKey ? ((streamer as any)[prevAmmoKey] ?? 0) : 0;
+
+    const nextAmmoKey = this.weaponAmmoKey(targetWeapon);
+
+    const nextMaxAmmo = nextAmmoKey ? ((this.cfg.weapons.ammo.max as any)[targetWeapon] ?? 0) : 0;
+
+    const nextAmmo = nextAmmoKey ? Math.max(0, Math.min(nextMaxAmmo, drop.ammo)) : 0;
+
+
+
+    if (nextAmmoKey) {
+
+      (streamer as any)[nextAmmoKey] = nextAmmo;
+
+    }
+
+    streamer.weapon = targetWeapon;
+
+
+
+    if (prevAmmoKey) {
+
+      this.spawnWeaponDrop(currentWeapon, drop.x, drop.y, prevAmmo, 'swap');
+
+      (streamer as any)[prevAmmoKey] = 0;
+
+    }
+
+
+
+    this.broadcast('notice', { message: `${streamer.name} swapped to ${targetWeapon.toUpperCase()}!` });
+
+  }
+
+
 
   pickZombieClass(): "runner" | "brute" | "spitter" | "stalker" | "bomber" {
     const w = this.cfg.zombies.weights;

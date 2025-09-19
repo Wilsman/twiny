@@ -14,7 +14,9 @@ export interface Input {
   aimY: number;
   melee?: boolean;
   dash?: boolean;
+  interact?: boolean;
 }
+
 
 export type PlayerRole = 'streamer' | 'zombie';
 
@@ -123,6 +125,16 @@ export interface Pickup {
   y: number;
 }
 
+export type WeaponDropSource = 'boss' | 'treasure' | 'swap' | 'spawn';
+
+export interface WeaponDrop {
+  id: string;
+  weapon: NonNullable<Player['weapon']>;
+  ammo: number;
+  x: number;
+  y: number;
+  source: WeaponDropSource;
+}
 export interface AIZombie {
   id: string;
   pos: Vec;

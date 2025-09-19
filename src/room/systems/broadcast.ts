@@ -13,6 +13,7 @@ export function broadcastState(ctx: RoomDO) {
     globs: ctx.spittles.map(g => ({ id: g.id, x: g.pos.x, y: g.pos.y })),
     walls: ctx.walls.map(o => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h })),
     pickups: ctx.pickups.map(pk => ({ id: pk.id, type: pk.type, x: pk.x, y: pk.y })),
+    weaponDrops: ctx.weaponDrops.map(w => ({ id: w.id, weapon: w.weapon, ammo: w.ammo, x: w.x, y: w.y, source: w.source })),
           aiZombies: ctx.aiZombies.map(z => ({ 
       id: z.id, 
       x: z.pos.x, 
