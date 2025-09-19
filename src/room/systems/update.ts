@@ -8,6 +8,10 @@ import { TileId } from '../../config';
 export function update(ctx: RoomDO) {
   const now = Date.now();
 
+  if (!ctx.roundActive) {
+    return;
+  }
+
   // Drop stale sockets (missed heartbeats for 40s)
   for (const [id, p] of ctx.players) {
     if (now - p.lastSeen > 40000) {
@@ -163,11 +167,8 @@ export function update(ctx: RoomDO) {
       if (isLethal(t)) {
         if (p.role === 'streamer') {
           ctx.broadcast("notice", { message: "Skull Fell into a pit! Respawning..." });
-          p.hp = 0;
-          // simple respawn
-          p.pos = ctx.spawnInRandomRoom();
-          p.hp = p.maxHp ?? ctx.cfg.streamer.maxHp;
-          nx = p.pos.x; ny = p.pos.y;
+          ctx.handleStreamerDeath(p, 'pit');
+          return;
         } else {
           p.alive = false; const id=p.id; setTimeout(()=>{ const zp=ctx.players.get(id); if (zp) { zp.pos=ctx.spawnZombiePos(); zp.alive=true; } }, ctx.cfg.combat.respawnMs);
         }
@@ -186,9 +187,8 @@ export function update(ctx: RoomDO) {
             ctx.broadcast("notice", { message: "Dagger Stepped on spikes! Taking damage..." });
             (p as any).lastSpikeDamage = now;
             if ((p.hp ?? 0) <= 0) {
-              p.pos = ctx.spawnInRandomRoom();
-              p.hp = p.maxHp ?? ctx.cfg.streamer.maxHp;
-              nx = p.pos.x; ny = p.pos.y;
+              ctx.handleStreamerDeath(p, 'spikes');
+              return;
             }
           } else {
             const damage = 5;
@@ -233,9 +233,8 @@ export function update(ctx: RoomDO) {
             }
             (p as any).lastPoisonDamage = now;
             if ((p.hp ?? 0) <= 0) {
-              p.pos = ctx.spawnInRandomRoom();
-              p.hp = p.maxHp ?? ctx.cfg.streamer.maxHp;
-              nx = p.pos.x; ny = p.pos.y;
+              ctx.handleStreamerDeath(p, 'poison');
+              return;
             }
           } else {
             const damage = 4;
@@ -931,15 +930,8 @@ export function update(ctx: RoomDO) {
             ctx.trackDamageTaken(streamer, ctx.cfg.combat.zombieTouchDamage);
           }
           if ((streamer.hp ?? 0) <= 0) {
-            // Handle explosive death before respawn
-            const { s } = statsFor(streamer);
-            if (s.explosiveDeathDamage > 0) {
-              ctx.createExplosion(streamer.pos.x, streamer.pos.y, s.explosiveDeathDamage, 60, streamer.id);
-            }
-            // Respawn streamer; lose unbanked on death (keep banked)
-            streamer.pos = ctx.spawnInRandomRoom();
-            streamer.hp = streamer.maxHp ?? ctx.cfg.streamer.maxHp;
-            streamer.score = 0;
+            ctx.handleStreamerDeath(streamer, 'zombie_touch');
+            return;
           }
         }// Knockback streamer slightly
         const dx = streamer.pos.x - z.pos.x; const dy = streamer.pos.y - z.pos.y; const d = Math.hypot(dx, dy) || 1;
@@ -1084,40 +1076,26 @@ export function update(ctx: RoomDO) {
 
   const s = [...ctx.players.values()].find(p => p.role === "streamer");
 
-  // Round timer: reset when time elapses
+  // Round timer: end raid when time elapses
   if ((ctx.roundEndTime || 0) > 0 && now >= (ctx.roundEndTime as number)) {
-    // On round end, just reset unbanked score (no extractions)
-    if (s) { s.score = 0; }
-
-    ctx.roundEndTime = now + ctx.roundDurationMs;
-    ctx.bullets = [];
-    ctx.pickups = [];
-    // Extractions removed - no respawn/rotation
-    // Optionally regenerate map each round (for variety)
-    ctx.generateTileMapAndWalls();
-    // Broadcast new map to all clients
-    if (ctx.map) {
-      const base64 = ctx.u8ToBase64(ctx.map.tiles);
-      ctx.broadcast('map', { map: { w: ctx.map.w, h: ctx.map.h, size: ctx.map.size, theme: ctx.map.theme, tilesBase64: base64, props: ctx.map.props, lights: ctx.map.lights } });
+    if (s) {
+      s.alive = false;
+      s.vel.x = 0;
+      s.vel.y = 0;
+      s.input = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        shoot: false,
+        melee: false,
+        dash: false,
+        aimX: s.pos.x,
+        aimY: s.pos.y,
+      };
     }
-    for (const p of ctx.players.values()) {
-      if (p.role === "streamer") {
-        p.pos = { x: ctx.W / 2, y: ctx.H / 2 };
-        p.alive = true;
-        p.hp = p.maxHp ?? ctx.cfg.streamer.maxHp;
-        p.weapon = "pistol";
-        p.pistolAmmo = ctx.cfg.weapons.ammo.initial.pistol;
-        p.smgAmmo = 0;
-        p.shotgunAmmo = 0;
-      } else {
-        p.pos = ctx.spawnZombiePos();
-        p.alive = true;
-        p.boostUntil = undefined;
-        p.zHp = p.zMaxHp;
-      }
-    }
-    // Let clients know a new round started
-    ctx.broadcast("notice", { message: "New round!" });
+    ctx.endRound('timeout', { streamer: s || undefined });
+    return;
   }
 
 }

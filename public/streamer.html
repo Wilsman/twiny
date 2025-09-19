@@ -398,6 +398,7 @@
       let currentHealthSegments = 0;
       let maxHealthSegments = 10;
       let isPlayerDead = false;
+      let roundActive = false;
       let gameStartTime = Date.now();
       let lastPlayerPos = { x: 0, y: 0 };
 
@@ -463,54 +464,67 @@
       }
 
       // Death screen functions
-      function showDeathScreen(playerStats) {
+      function showDeathScreen(playerStats, reason = 'streamer_dead') {
         isPlayerDead = true;
-        
+        roundActive = false;
+
         // Calculate time survived
         const timeAlive = Date.now() - gameStartTime;
         const minutes = Math.floor(timeAlive / 60000);
         const seconds = Math.floor((timeAlive % 60000) / 1000);
-        
+
+        const subtitle = deathScreenEl.querySelector('.death-subtitle');
+        if (subtitle) {
+          if (reason === 'timeout') {
+            subtitle.textContent = 'Raid Complete';
+          } else {
+            subtitle.textContent = 'Mission Statistics';
+          }
+        }
+
+        restartRaidBtn.disabled = false;
+
         // Update death screen stats
-        document.getElementById('deathEnemiesKilled').textContent = playerStats.raidStats?.enemiesKilled || 0;
-        document.getElementById('deathBossesKilled').textContent = playerStats.raidStats?.bossesKilled || 0;
-        document.getElementById('deathBulletsFired').textContent = playerStats.raidStats?.bulletsFired || 0;
-        
-        const accuracy = playerStats.raidStats?.bulletsFired > 0 
-          ? Math.round((playerStats.raidStats.bulletsHit / playerStats.raidStats.bulletsFired) * 100)
+        const stats = playerStats || {};
+        document.getElementById('deathEnemiesKilled').textContent = stats.raidStats?.enemiesKilled || 0;
+        document.getElementById('deathBossesKilled').textContent = stats.raidStats?.bossesKilled || 0;
+        document.getElementById('deathBulletsFired').textContent = stats.raidStats?.bulletsFired || 0;
+
+        const accuracy = stats.raidStats?.bulletsFired > 0
+          ? Math.round((stats.raidStats.bulletsHit / stats.raidStats.bulletsFired) * 100)
           : 0;
         document.getElementById('deathAccuracy').textContent = accuracy + '%';
-        
-        document.getElementById('deathLevel').textContent = playerStats.level || 1;
-        document.getElementById('deathTotalXP').textContent = playerStats.raidStats?.totalXPGained || 0;
-        document.getElementById('deathFinalScore').textContent = playerStats.score || 0;
+
+        document.getElementById('deathLevel').textContent = stats.level || 1;
+        document.getElementById('deathTotalXP').textContent = stats.raidStats?.totalXPGained || 0;
+        document.getElementById('deathFinalScore').textContent = stats.score || 0;
         document.getElementById('deathTimeSurvived').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
-        document.getElementById('deathCoinsCollected').textContent = playerStats.raidStats?.coinsCollected || 0;
-        document.getElementById('deathPickupsTaken').textContent = playerStats.raidStats?.pickupsTaken || 0;
-        document.getElementById('deathDamageDealt').textContent = playerStats.raidStats?.damageDealt || 0;
-        document.getElementById('deathDamageTaken').textContent = playerStats.raidStats?.damageTaken || 0;
-        
+
+        document.getElementById('deathCoinsCollected').textContent = stats.raidStats?.coinsCollected || 0;
+        document.getElementById('deathPickupsTaken').textContent = stats.raidStats?.pickupsTaken || 0;
+        document.getElementById('deathDamageDealt').textContent = stats.raidStats?.damageDealt || 0;
+        document.getElementById('deathDamageTaken').textContent = stats.raidStats?.damageTaken || 0;
+
         // Enemy breakdown
-        const breakdown = playerStats.raidStats?.enemyBreakdown || {};
+        const breakdown = stats.raidStats?.enemyBreakdown || {};
         document.getElementById('deathBasicZombies').textContent = breakdown.basic || 0;
         document.getElementById('deathRunners').textContent = breakdown.runner || 0;
         document.getElementById('deathBrutes').textContent = breakdown.brute || 0;
         document.getElementById('deathSpitters').textContent = breakdown.spitter || 0;
         document.getElementById('deathStalkers').textContent = breakdown.stalker || 0;
         document.getElementById('deathBombers').textContent = breakdown.bomber || 0;
-        
+
         // Bosses defeated
-        const bossesDefeated = playerStats.raidStats?.bossesDefeated || [];
+        const bossesDefeated = stats.raidStats?.bossesDefeated || [];
         if (bossesDefeated.length > 0) {
           console.log('Bosses defeated:', bossesDefeated.join(', '));
         }
-        
+
         // Final upgrades
         const upgradesEl = document.getElementById('deathFinalUpgrades');
-        if (playerStats.mods && playerStats.mods.length > 0) {
+        if (stats.mods && stats.mods.length > 0) {
           upgradesEl.innerHTML = '';
-          playerStats.mods.forEach(mod => {
+          stats.mods.forEach(mod => {
             const upgradeEl = document.createElement('div');
             upgradeEl.className = 'upgrade-item';
             // Use the mod name if available, otherwise format the ID
@@ -532,20 +546,34 @@
       }
 
       function restartRaid() {
-        hideDeathScreen();
-        gameStartTime = Date.now();
-        // Trigger a new room creation
-        if (ws && ws.readyState === 1) {
-          leaveRoom(true);
-        }
-        setTimeout(() => boot(), 100);
+        if (!ws || ws.readyState !== 1) return;
+        restartRaidBtn.disabled = true;
+        ws.send(JSON.stringify({ type: 'restart_round' }));
       }
 
       function exitToMenu() {
         hideDeathScreen();
-        if (ws && ws.readyState === 1) {
-          leaveRoom(true);
-        }
+        leaveRoom(true);
+        window.location.href = '/index.html';
+      }
+
+      function handleRoundRestart() {
+        roundActive = true;
+        gameStartTime = Date.now();
+        lastPlayerPos = { x: 0, y: 0 };
+        prevBulletPos = new Map();
+        effects.length = 0;
+        muzzleFlashes.length = 0;
+        damageNumbers = [];
+        trails.clear();
+        lastHp = 100;
+        lastScore = 0;
+        upgradeQueue.length = 0;
+        currentChoices = [];
+        overlay.classList.add('hidden');
+        choiceEls.forEach((el) => { el.textContent = ''; el.disabled = true; });
+        hideDeathScreen();
+        restartRaidBtn.disabled = false;
       }
 
       function showNextUpgrade() {
@@ -672,6 +700,9 @@
           status.textContent = "connected";
           status.dataset.state = "connected";
           document.body.classList.add("connected");
+          roundActive = true;
+          gameStartTime = Date.now();
+          restartRaidBtn.disabled = false;
           const name = nameStorage().get() || "Marine";
           ws.send(
             JSON.stringify({ type: "join_room", role: "streamer", name })
@@ -713,8 +744,21 @@
             playerId = msg.playerId;
             arena = msg.arena;
           }
+          if (msg.type === 'round_end') {
+            roundActive = false;
+            const finalStats = msg.streamer || state.players.find((p) => p.id === playerId);
+            showDeathScreen(finalStats, msg.reason || 'streamer_dead');
+            status.textContent = 'connected • raid ended';
+            status.dataset.state = 'ended';
+          }
+          if (msg.type === 'round_restart') {
+            handleRoundRestart();
+            status.textContent = 'connected • restarting raid';
+            status.dataset.state = 'connected';
+          }
           if (msg.type === "state") {
             stateMsgCount++;
+            roundActive = msg.roundActive !== false;
             // detect removed bullets for small impact effect
             const curMap = new Map(
               msg.bullets.map((b) => [b.id, { x: b.x, y: b.y }])
@@ -903,8 +947,13 @@
               if (hudXpEl) hudXpEl.textContent = '0/0';
             }
             const ping = Math.max(0, Date.now() - (msg.t || Date.now()));
-            status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
-            status.dataset.state = "connected";
+            if (roundActive) {
+              status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
+              status.dataset.state = "connected";
+            } else {
+              status.textContent = `connected • raid ended`;
+              status.dataset.state = "ended";
+            }
             state.remainingTime = msg.remainingTime;
             updateTimer(state.remainingTime);
             updatePlayerList(msg.players);
@@ -927,20 +976,8 @@
             }
             
             // Check for death - only trigger death screen, don't auto-hide on respawn
-            if (me && (me.hp ?? 0) <= 0 && !isPlayerDead) {
-              console.log('Death detected! HP:', me.hp);
+            if (!roundActive && me && me.role === 'streamer' && me.alive === false && !isPlayerDead) {
               showDeathScreen(me);
-            }
-            
-            // Check for sudden teleportation (respawn after spike/poison death)
-            if (me && lastPlayerPos.x !== 0 && !isPlayerDead) {
-              const distMoved = Math.hypot(me.x - lastPlayerPos.x, me.y - lastPlayerPos.y);
-              const hpRestored = (me.hp ?? 0) > lastHp + 20; // HP significantly increased
-              
-              if (distMoved > 500 && hpRestored) {
-                console.log('Teleportation + HP restore detected - likely respawn! Distance:', distMoved, 'HP:', lastHp, '->', me.hp);
-                showDeathScreen(me);
-              }
             }
             
             // Update last position
@@ -965,20 +1002,13 @@
             appendChat("System", msg.message);
             
             // Check for respawn notice (pit death)
-            if (msg.message && msg.message.includes("💀 Fell into a pit! Respawning...") && !isPlayerDead) {
-              console.log('Pit death detected:', msg.message);
-              const me = state.players.find((p) => p.id === playerId);
-              if (me) {
-                showDeathScreen(me);
-              }
-            }
           }
           if (msg.type === 'upgrade_offer') {
             queueUpgrade(msg.choices || []);
           }
         });
         inputIv = setInterval(() => {
-          if (ws && ws.readyState === 1 && !isPlayerDead) {
+          if (ws && ws.readyState === 1 && !isPlayerDead && roundActive) {
             // Convert screen aim to world coordinates via camera + zoom
             const aimWX = camX + input.aimX / zoom;
             const aimWY = camY + input.aimY / zoom;
@@ -1020,7 +1050,7 @@
 
         // If focus is lost, immediately send a neutral input (interval covers it, but faster feedback helps)
         sendNeutralHandler = () => {
-          if (ws && ws.readyState === 1 && !isPlayerDead) {
+          if (ws && ws.readyState === 1 && !isPlayerDead && roundActive) {
             const aimWX = camX + input.aimX / zoom;
             const aimWY = camY + input.aimY / zoom;
             ws.send(
@@ -1090,6 +1120,9 @@
         lastHp = 100;
         state = { players: [], bullets: [], arena };
         updatePlayerList([]);
+        hideDeathScreen();
+        roundActive = false;
+        restartRaidBtn.disabled = false;
       }
 
       // Smoothing map for positions (reduces 20Hz stutter)
@@ -1805,6 +1838,10 @@
         for (const p of state.players) {
           const sp = getSmoothedPos(p.id, p.x, p.y, dt);
           ctx.save();
+          if (p.role === "streamer" && p.alive === false) {
+            ctx.restore();
+            continue;
+          }
           if (p.role === "streamer") {
             ctx.strokeStyle = "#4caf50";
             ctx.beginPath();

@@ -261,12 +261,10 @@ export function aiZombieAttackStreamer(ctx: RoomDO, zombie: AIZombie, streamer: 
     // Add damage number for zombie hit on streamer
     ctx.addDamageNumber(streamer.pos.x, streamer.pos.y, ctx.cfg.combat.zombieTouchDamage, false, false);
   }
-  
+
   if ((streamer.hp ?? 0) <= 0) {
-    // Respawn streamer; lose unbanked on death (keep banked)
-    streamer.pos = ctx.spawnInRandomRoom();
-    streamer.hp = streamer.maxHp ?? ctx.cfg.streamer.maxHp;
-    streamer.score = 0;
+    ctx.handleStreamerDeath(streamer, 'ai_zombie_touch');
+    return;
   }
   
   // Knockback streamer slightly

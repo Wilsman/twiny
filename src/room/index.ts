@@ -85,6 +85,7 @@ export class RoomDO {
   uiTickMs = 200; // 5Hz - UI updates
   pickupTickMs = CONFIG.ticks.pickupMs; // updated when cfg changes
   running = false;
+  roundActive = false;
   loopTimer: number | undefined;
   uiTimer: number | undefined;
   pickupTimer: number | undefined;
@@ -181,7 +182,8 @@ export class RoomDO {
   startLoop() {
     this.running = true;
     if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
-    
+    this.roundActive = true;
+
     // Main game loop - 20Hz (includes state broadcast for responsiveness)
     const step = () => {
       this.update();
@@ -207,6 +209,152 @@ export class RoomDO {
   // Separate pickup spawning logic for reduced tick rate
   checkPickupSpawning() {
     return checkPickupSpawningImpl(this);
+  }
+
+
+  handleStreamerDeath(streamer: Player, cause: string) {
+    if (!streamer || !this.roundActive || streamer.alive === false) return;
+
+    streamer.alive = false;
+    streamer.hp = 0;
+    streamer.vel.x = 0;
+    streamer.vel.y = 0;
+    streamer.input = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      shoot: false,
+      melee: false,
+      dash: false,
+      aimX: streamer.pos.x,
+      aimY: streamer.pos.y,
+    };
+    streamer.dashUntil = undefined;
+    streamer.weaponBoostUntil = undefined;
+
+    const { s } = statsFor(streamer);
+    if (s.explosiveDeathDamage > 0) {
+      this.createExplosion(streamer.pos.x, streamer.pos.y, s.explosiveDeathDamage, 60, streamer.id);
+    }
+
+    this.endRound('streamer_dead', { cause, streamer });
+  }
+
+  endRound(reason: string, opts: { cause?: string; streamer?: Player } = {}) {
+    if (!this.roundActive) return;
+    this.roundActive = false;
+    this.roundEndTime = undefined;
+    this.stopLoop();
+
+    const payload: any = {
+      reason,
+      cause: opts.cause,
+      streamer: opts.streamer ? this.publicPlayer(opts.streamer) : null,
+    };
+
+    this.broadcast('round_end', payload);
+    this.broadcastState();
+  }
+
+  restartRound() {
+    const streamer = [...this.players.values()].find((p) => p.role === 'streamer');
+    if (!streamer || this.roundActive) return;
+
+    this.stopLoop();
+
+    this.bullets = [];
+    this.spittles = [];
+    this.pickups = [];
+    this.aiZombies = [];
+    this.bosses = [];
+    this.bossMinions = [];
+    this.poisonFields = [];
+    this.damageNumbers = [];
+    this.extractions = [];
+    this.midSafeZones = [];
+    this.zombieSlowUntil = undefined;
+    this.lastAIZombieSpawn = 0;
+    this.lastBossSpawn = 0;
+    this.nextBossAnnouncement = undefined;
+
+    this.generateTileMapAndWalls();
+
+    const spawn = this.spawnInRandomRoom();
+    streamer.pos = { ...spawn };
+    streamer.alive = true;
+    streamer.hp = this.cfg.streamer.maxHp;
+    streamer.maxHp = this.cfg.streamer.maxHp;
+    streamer.score = 0;
+    streamer.banked = 0;
+    streamer.weapon = 'pistol';
+    streamer.pistolAmmo = this.cfg.weapons.ammo.initial.pistol;
+    streamer.smgAmmo = 0;
+    streamer.shotgunAmmo = 0;
+    streamer.mods = {};
+    streamer.level = 0;
+    streamer.xp = 0;
+    streamer.vel = { x: 0, y: 0 };
+    streamer.input = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      shoot: false,
+      melee: false,
+      dash: false,
+      aimX: spawn.x,
+      aimY: spawn.y,
+    };
+    streamer.lastDashAt = 0;
+    streamer.dashUntil = undefined;
+    streamer.weaponBoostUntil = undefined;
+    this.initRaidStats(streamer);
+
+    const now = Date.now();
+    for (const p of this.players.values()) {
+      p.lastSeen = now;
+      if (p.role === 'zombie') {
+        const zc = this.pickZombieClass();
+        p.zClass = zc;
+        const base = this.cfg.zombies.baseHp;
+        p.zMaxHp = Math.max(1, Math.round(base * this.cfg.zombies.hpMul[zc]));
+        p.zHp = p.zMaxHp;
+        p.score = 0;
+        p.alive = true;
+        p.vel = { x: 0, y: 0 };
+        p.input = {
+          up: false,
+          down: false,
+          left: false,
+          right: false,
+          shoot: false,
+          melee: false,
+          dash: false,
+          aimX: spawn.x,
+          aimY: spawn.y,
+        };
+        if (zc === 'spitter') {
+          p.nextSpitAt = now + this.randRange(this.cfg.zombies.spitter.cooldownMsMin, this.cfg.zombies.spitter.cooldownMsMax);
+        } else {
+          p.nextSpitAt = undefined;
+        }
+        p.pos = this.spawnZombieAwayFrom(streamer.pos, 200);
+      }
+    }
+
+    this.roundEndTime = Date.now() + this.roundDurationMs;
+    this.roundActive = true;
+
+    if (this.map) {
+      const base64 = this.u8ToBase64(this.map.tiles);
+      this.broadcast('map', { map: { w: this.map.w, h: this.map.h, size: this.map.size, theme: this.map.theme, tilesBase64: base64, props: this.map.props, lights: this.map.lights } });
+    }
+
+    this.broadcast('round_restart', { arena: { w: this.W, h: this.H } });
+    this.broadcast('players_update', { players: [...this.players.values()].map(this.publicPlayer) });
+
+    this.startLoop();
   }
 
 
@@ -285,8 +433,9 @@ export class RoomDO {
         case "input": {
           const p = this.players.get(pid);
           if (!p) return;
+          if (!this.roundActive) return;
           const now = Date.now();
-          
+
           // Process input with lag compensation
           this.processInputWithLagCompensation(p, {
             up: !!msg.up,
@@ -301,6 +450,12 @@ export class RoomDO {
           }, msg.timestamp || now);
           
           p.lastSeen = now;
+          break;
+        }
+        case "restart_round": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== 'streamer') return;
+          this.restartRound();
           break;
         }
         case "ping": {
@@ -620,6 +775,17 @@ export class RoomDO {
 
   spawnZombiePos(): Vec {
     return spawnZombiePosImpl(this);
+  }
+
+  spawnZombieAwayFrom(origin: Vec, minDistance = 200): Vec {
+    let fallback = this.spawnInRandomRoom();
+    for (let i = 0; i < 20; i++) {
+      const candidate = this.spawnInRandomRoom();
+      const dist = Math.hypot(candidate.x - origin.x, candidate.y - origin.y);
+      if (dist >= minDistance) return candidate;
+      if (!fallback || dist > Math.hypot(fallback.x - origin.x, fallback.y - origin.y)) fallback = candidate;
+    }
+    return fallback;
   }
 
 
