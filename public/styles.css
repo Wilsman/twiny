@@ -1077,6 +1077,111 @@ body.game {
   text-align: right;
 }
 
+/* Raid end overlay (join clients) */
+.raid-end-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 8, 12, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.raid-end-card {
+  width: min(420px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px 32px;
+  border-radius: 16px;
+  border: 1px solid rgba(244, 114, 182, 0.35);
+  background: linear-gradient(
+    160deg,
+    rgba(18, 18, 24, 0.95) 0%,
+    rgba(28, 18, 24, 0.92) 100%
+  );
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.raid-end-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--pink);
+}
+
+.raid-end-description {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.raid-end-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.raid-end-leaderboard ol {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.raid-end-leaderboard li {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 15px;
+}
+
+.raid-end-rank {
+  font-weight: 700;
+  color: rgba(244, 114, 182, 0.9);
+}
+
+.raid-end-name {
+  text-align: left;
+}
+
+.raid-end-score {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.raid-end-empty {
+  margin: 0;
+  padding: 12px 0 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.raid-end-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.raid-end-leave {
+  background: linear-gradient(180deg, rgba(239, 83, 80, 0.85), rgba(183, 28, 28, 0.9));
+  border-color: rgba(239, 83, 80, 0.4);
+}
+
+.raid-end-leave:hover {
+  border-color: rgba(239, 83, 80, 0.6);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 12px 26px rgba(239, 83, 80, 0.35);
+}
+
 /* Death Screen */
 .death-screen {
   position: fixed;
