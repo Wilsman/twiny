@@ -1651,7 +1651,25 @@
           for (const boss of state.bosses) {
             const visual = boss.visual || {};
             ctx.save();
-            
+
+            if (boss.type === "shadowLord") {
+              const range = boss.lifeDrainRange || 0;
+              if (range > 0) {
+                ctx.save();
+                ctx.globalAlpha = 0.18;
+                ctx.fillStyle = "rgba(129, 212, 250, 0.18)";
+                ctx.beginPath();
+                ctx.arc(boss.pos.x, boss.pos.y, range, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 0.9;
+                ctx.strokeStyle = "rgba(129, 212, 250, 0.85)";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([10, 6]);
+                ctx.stroke();
+                ctx.restore();
+              }
+            }
+
             // Boss glow effect
             ctx.shadowColor = visual.glowColor || "#ff0000";
             ctx.shadowBlur = 20;
