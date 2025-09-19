@@ -99,16 +99,33 @@
             </button>
           </div>
           <div class="row">
+            <button class="weapon" id="btnRailgun" data-weapon="railgun">
+              Railgun (4)
+            </button>
+            <button class="weapon" id="btnFlamethrower" data-weapon="flamethrower">
+              Flamethrower (5)
+            </button>
+          </div>
+          <div class="row">
             <button id="buyShotgun" title="Costs 300 banked" disabled>
-              Unlock Shotgun (4) • 300
+              Unlock Shotgun (6)  - 300
             </button>
             <button id="buySmg" title="Costs 300 banked" disabled>
-              Unlock SMG (5) • 300
+              Unlock SMG (7)  - 300
+            </button>
+          </div>
+          <div class="row">
+            <button id="buyRailgun" title="Costs 600 banked" disabled>
+              Unlock Railgun (8)  - 600
+            </button>
+            <button id="buyFlamethrower" title="Costs 450 banked" disabled>
+              Unlock Flamethrower (9)  - 450
             </button>
           </div>
           <div class="tip">
-            Right‑click or Q to swing bat. Pistol is free. Unlock SMG/Shotgun
-            with banked (300 each). Use 1/2/3 to equip, 5/4 to buy.
+            Right-click or Q to swing bat. Pistol is free. Unlock SMG/Shotgun/
+            Railgun/Flamethrower with banked reserves. Use 1-5 to equip, 6-9 to
+            buy instantly.
           </div>
         </div>
 
@@ -360,9 +377,19 @@
       const playersEl = document.getElementById("players");
       const buyShotgunBtn = document.getElementById("buyShotgun");
       const buySmgBtn = document.getElementById("buySmg");
+      const buyRailgunBtn = document.getElementById("buyRailgun");
+      const buyFlamethrowerBtn = document.getElementById("buyFlamethrower");
       const btnPistol = document.getElementById("btnPistol");
       const btnSmg = document.getElementById("btnSmg");
       const btnShotgun = document.getElementById("btnShotgun");
+      const btnRailgun = document.getElementById("btnRailgun");
+      const btnFlamethrower = document.getElementById("btnFlamethrower");
+      const weaponCosts = {
+        shotgun: 300,
+        smg: 300,
+        railgun: 600,
+        flamethrower: 450
+      };
       const flashEl = document.getElementById("flash");
       const newBtn = document.getElementById("newRoom");
       const copyBtn = document.getElementById("copy");
@@ -748,12 +775,12 @@
             roundActive = false;
             const finalStats = msg.streamer || state.players.find((p) => p.id === playerId);
             showDeathScreen(finalStats, msg.reason || 'streamer_dead');
-            status.textContent = 'connected • raid ended';
+            status.textContent = 'connected  - raid ended';
             status.dataset.state = 'ended';
           }
           if (msg.type === 'round_restart') {
             handleRoundRestart();
-            status.textContent = 'connected • restarting raid';
+            status.textContent = 'connected  - restarting raid';
             status.dataset.state = 'connected';
           }
           if (msg.type === "state") {
@@ -857,11 +884,16 @@
               }
               const w = me.weapon || "pistol";
               weaponEl.textContent = w;
-              let ammo = 0;
-              if (w === "pistol") ammo = me.pistolAmmo ?? 0;
-              else if (w === "smg") ammo = me.smgAmmo ?? 0;
-              else if (w === "shotgun") ammo = me.shotgunAmmo ?? 0;
-              else ammo = 0;
+              const ammoByWeapon = {
+                pistol: me.pistolAmmo ?? 0,
+                smg: me.smgAmmo ?? 0,
+                shotgun: me.shotgunAmmo ?? 0,
+                railgun: me.railgunAmmo ?? 0,
+                flamethrower: me.flamethrowerAmmo ?? 0,
+                bat: Infinity
+              };
+              let ammo = ammoByWeapon[w] ?? 0;
+              if (!Number.isFinite(ammo)) ammo = 0;
               
               // Check if ammo has decreased
               const prevAmmo = parseInt(ammoEl.textContent) || 0;
@@ -904,6 +936,9 @@
               // Ownership inference
               const hasSmg = (me.smgAmmo ?? 0) > 0 || w === "smg";
               const hasShotgun = (me.shotgunAmmo ?? 0) > 0 || w === "shotgun";
+              const hasRailgun = (me.railgunAmmo ?? 0) > 0 || w === "railgun";
+              const hasFlamethrower = (me.flamethrowerAmmo ?? 0) > 0 || w === "flamethrower";
+              const banked = me.banked || 0;
               // Button states
               if (btnPistol) {
                 btnPistol.classList.toggle("equipped", w === "pistol");
@@ -919,21 +954,51 @@
                 btnShotgun.classList.toggle("owned", hasShotgun);
                 btnShotgun.classList.toggle("locked", !hasShotgun);
               }
+              if (btnRailgun) {
+                btnRailgun.classList.toggle("equipped", w === "railgun");
+                btnRailgun.classList.toggle("owned", hasRailgun);
+                btnRailgun.classList.toggle("locked", !hasRailgun);
+              }
+              if (btnFlamethrower) {
+                btnFlamethrower.classList.toggle("equipped", w === "flamethrower");
+                btnFlamethrower.classList.toggle("owned", hasFlamethrower);
+                btnFlamethrower.classList.toggle("locked", !hasFlamethrower);
+              }
               if (buyShotgunBtn) {
-                const canBuy = (me.banked || 0) >= 300 && !hasShotgun;
+                const cost = weaponCosts.shotgun;
+                const canBuy = banked >= cost && !hasShotgun;
                 buyShotgunBtn.disabled = !canBuy;
-                buyShotgunBtn.textContent = "Unlock Shotgun (4) ??? 300";
+                buyShotgunBtn.textContent = 'Unlock Shotgun (6) - ' + cost;
                 buyShotgunBtn.title = canBuy
-                  ? "Press 4 to purchase"
-                  : "Need 300 banked or already unlocked";
+                  ? 'Press 6 to purchase'
+                  : 'Need ' + cost + ' banked or already unlocked';
               }
               if (buySmgBtn) {
-                const canBuySmg = (me.banked || 0) >= 300 && !hasSmg;
+                const cost = weaponCosts.smg;
+                const canBuySmg = banked >= cost && !hasSmg;
                 buySmgBtn.disabled = !canBuySmg;
-                buySmgBtn.textContent = "Unlock SMG (5) ??? 300";
+                buySmgBtn.textContent = 'Unlock SMG (7) - ' + cost;
                 buySmgBtn.title = canBuySmg
-                  ? "Press 5 to purchase"
-                  : "Need 300 banked or already unlocked";
+                  ? 'Press 7 to purchase'
+                  : 'Need ' + cost + ' banked or already unlocked';
+              }
+              if (buyRailgunBtn) {
+                const cost = weaponCosts.railgun;
+                const canBuyRail = banked >= cost && !hasRailgun;
+                buyRailgunBtn.disabled = !canBuyRail;
+                buyRailgunBtn.textContent = 'Unlock Railgun (8) - ' + cost;
+                buyRailgunBtn.title = canBuyRail
+                  ? 'Press 8 to purchase'
+                  : 'Need ' + cost + ' banked or already unlocked';
+              }
+              if (buyFlamethrowerBtn) {
+                const cost = weaponCosts.flamethrower;
+                const canBuyFlame = banked >= cost && !hasFlamethrower;
+                buyFlamethrowerBtn.disabled = !canBuyFlame;
+                buyFlamethrowerBtn.textContent = 'Unlock Flamethrower (9) - ' + cost;
+                buyFlamethrowerBtn.title = canBuyFlame
+                  ? 'Press 9 to purchase'
+                  : 'Need ' + cost + ' banked or already unlocked';
               }
             } else {
               renderBuffs([]);
@@ -948,10 +1013,10 @@
             }
             const ping = Math.max(0, Date.now() - (msg.t || Date.now()));
             if (roundActive) {
-              status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
+              status.textContent = `connected  - ${ping} ms  - players: ${msg.players.length}`;
               status.dataset.state = "connected";
             } else {
-              status.textContent = `connected • raid ended`;
+              status.textContent = `connected  - raid ended`;
               status.dataset.state = "ended";
             }
             state.remainingTime = msg.remainingTime;
@@ -2509,20 +2574,25 @@
       }
       document.addEventListener("keydown", (e) => {
         if (e.repeat) return;
-        if (e.key === "1") sendSwitchWeapon("pistol");
-        if (e.key === "2") sendSwitchWeapon("smg");
-        if (e.key === "3") sendSwitchWeapon("shotgun");
-        if (e.key === "4") {
-          // Attempt shotgun purchase
+        const key = e.key;
+        if (key === "1") sendSwitchWeapon("pistol");
+        else if (key === "2") sendSwitchWeapon("smg");
+        else if (key === "3") sendSwitchWeapon("shotgun");
+        else if (key === "4") sendSwitchWeapon("railgun");
+        else if (key === "5") sendSwitchWeapon("flamethrower");
+        else if (key === "6") {
           if (ws && ws.readyState === 1)
             ws.send(JSON.stringify({ type: "buy", item: "shotgun" }));
-        }
-        if (e.key === "5") {
-          // Attempt SMG purchase
+        } else if (key === "7") {
           if (ws && ws.readyState === 1)
             ws.send(JSON.stringify({ type: "buy", item: "smg" }));
+        } else if (key === "8") {
+          if (ws && ws.readyState === 1)
+            ws.send(JSON.stringify({ type: "buy", item: "railgun" }));
+        } else if (key === "9") {
+          if (ws && ws.readyState === 1)
+            ws.send(JSON.stringify({ type: "buy", item: "flamethrower" }));
         }
-        // Extraction removed; X key unused
       });
       document.querySelectorAll(".weapon").forEach((btn) =>
         btn.addEventListener("click", (e) => {
@@ -2551,6 +2621,18 @@
         buySmgBtn.addEventListener("click", () => {
           if (ws && ws.readyState === 1)
             ws.send(JSON.stringify({ type: "buy", item: "smg" }));
+        });
+      }
+      if (buyRailgunBtn) {
+        buyRailgunBtn.addEventListener("click", () => {
+          if (ws && ws.readyState === 1)
+            ws.send(JSON.stringify({ type: "buy", item: "railgun" }));
+        });
+      }
+      if (buyFlamethrowerBtn) {
+        buyFlamethrowerBtn.addEventListener("click", () => {
+          if (ws && ws.readyState === 1)
+            ws.send(JSON.stringify({ type: "buy", item: "flamethrower" }));
         });
       }
 

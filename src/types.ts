@@ -228,10 +228,12 @@ export interface Player {
   banked?: number;
   role: "streamer" | "zombie";
   alive: boolean;
-  weapon?: string;
+  weapon?: 'pistol' | 'smg' | 'shotgun' | 'railgun' | 'flamethrower' | 'bat';
   pistolAmmo?: number;
   smgAmmo?: number;
   shotgunAmmo?: number;
+  railgunAmmo?: number;
+  flamethrowerAmmo?: number;
   weaponed?: boolean;
   boosted?: boolean;
   level?: number;

@@ -6,10 +6,26 @@ export type GameConfig = {
   streamer: { maxHp: number };
   combat: { zombieTouchDamage: number; knockbackStep: number; respawnMs: number };
   weapons: {
-    damage: { pistol: number; smg: number; shotgun: number; melee: number };
-    cooldownMs: { pistol: { base: number; boosted: number }; smg: { base: number; boosted: number }; shotgun: { base: number; boosted: number } };
-    projectile: { pistol: { speed: number; ttl: number }; smg: { speed: number; ttl: number }; shotgun: { speed: number; ttl: number; pellets: number } };
-    ammo: { initial: { pistol: number; smg: number; shotgun: number }; pickupGain: { pistol: number; smg: number; shotgun: number }; max: { pistol: number; smg: number; shotgun: number } };
+    damage: { pistol: number; smg: number; shotgun: number; railgun: number; flamethrower: number; melee: number };
+    cooldownMs: {
+      pistol: { base: number; boosted: number };
+      smg: { base: number; boosted: number };
+      shotgun: { base: number; boosted: number };
+      railgun: { base: number; boosted: number };
+      flamethrower: { base: number; boosted: number };
+    };
+    projectile: {
+      pistol: { speed: number; ttl: number };
+      smg: { speed: number; ttl: number };
+      shotgun: { speed: number; ttl: number; pellets: number };
+      railgun: { speed: number; ttl: number; pierce: number; width: number };
+      flamethrower: { speed: number; ttl: number; cone: number; shards: number; burnMs: number; burnDps: number };
+    };
+    ammo: {
+      initial: { pistol: number; smg: number; shotgun: number; railgun: number; flamethrower: number };
+      pickupGain: { pistol: number; smg: number; shotgun: number; railgun: number; flamethrower: number };
+      max: { pistol: number; smg: number; shotgun: number; railgun: number; flamethrower: number };
+    };
   };
   melee: { cooldownMs: number; reach: number; arcRad: number; knockbackStep: number };
   dash: { cooldownMs: number; durationMs: number; speedMultiplier: number };
@@ -143,22 +159,28 @@ export const CONFIG: GameConfig = {
       pistol: 100,
       smg: 100,
       shotgun: 100, // Per pellet
+      railgun: 320,
+      flamethrower: 40,
       melee: 100,
     },
     cooldownMs: {
       pistol: { base: 320, boosted: 200 },
       smg: { base: 90, boosted: 60 },
       shotgun: { base: 800, boosted: 550 },
+      railgun: { base: 1400, boosted: 900 },
+      flamethrower: { base: 120, boosted: 80 },
     },
     projectile: {
       pistol: { speed: 360, ttl: 1200 },
       smg: { speed: 340, ttl: 900 },
       shotgun: { speed: 300, ttl: 600, pellets: 6 },
+      railgun: { speed: 860, ttl: 1400, pierce: 6, width: 2.2 },
+      flamethrower: { speed: 180, ttl: 280, cone: 0.65, shards: 5, burnMs: 1500, burnDps: 18 },
     },
     ammo: {
-      initial: { pistol: 60, smg: 120, shotgun: 24 },
-      pickupGain: { pistol: 15, smg: 30, shotgun: 6 },
-      max: { pistol: 120, smg: 240, shotgun: 48 },
+      initial: { pistol: 60, smg: 120, shotgun: 24, railgun: 8, flamethrower: 180 },
+      pickupGain: { pistol: 15, smg: 30, shotgun: 6, railgun: 2, flamethrower: 45 },
+      max: { pistol: 120, smg: 240, shotgun: 48, railgun: 16, flamethrower: 360 },
     },
   },
   melee: { cooldownMs: 500, reach: 32, arcRad: Math.PI / 1.2, knockbackStep: 20 },

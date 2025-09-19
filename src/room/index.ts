@@ -291,6 +291,8 @@ export class RoomDO {
     streamer.pistolAmmo = this.cfg.weapons.ammo.initial.pistol;
     streamer.smgAmmo = 0;
     streamer.shotgunAmmo = 0;
+    streamer.railgunAmmo = 0;
+    streamer.flamethrowerAmmo = 0;
     streamer.mods = {};
     streamer.level = 0;
     streamer.xp = 0;
@@ -387,6 +389,8 @@ export class RoomDO {
           pistolAmmo: role === "streamer" ? this.cfg.weapons.ammo.initial.pistol : undefined,
           smgAmmo: role === "streamer" ? 0 : undefined,
           shotgunAmmo: role === "streamer" ? 0 : undefined,
+          railgunAmmo: role === "streamer" ? 0 : undefined,
+          flamethrowerAmmo: role === "streamer" ? 0 : undefined,
           banked: role === "streamer" ? 0 : undefined,
         };
         // Enforce single-streamer per room. Downgrade to zombie if already present.
@@ -399,7 +403,7 @@ export class RoomDO {
             role = "zombie";
             p.role = "zombie";
             p.hp = undefined; p.maxHp = undefined; p.ammo = undefined; p.maxAmmo = undefined; p.weaponBoostUntil = undefined;
-            p.weapon = undefined; p.pistolAmmo = undefined; p.smgAmmo = undefined; p.shotgunAmmo = undefined;
+            p.weapon = undefined; p.pistolAmmo = undefined; p.smgAmmo = undefined; p.shotgunAmmo = undefined; p.railgunAmmo = undefined; p.flamethrowerAmmo = undefined;
             p.pos = this.spawnZombiePos();
             try { ws.send(JSON.stringify({ type: "notice", message: "Streamer already active. You joined as a zombie." })); } catch {}
           }
@@ -491,26 +495,37 @@ export class RoomDO {
           const p = this.players.get(pid);
           if (!p || p.role !== 'streamer') return;
           const item = String(msg.item||'');
-          const cost = 300;
+          const costs: Record<string, number> = { shotgun: 300, smg: 300, railgun: 600, flamethrower: 450 };
+          const cost = costs[item];
+          if (!cost) return;
           const bank = p.banked || 0;
+          if (bank < cost) {
+            const msgText = 'Not enough banked (need ' + cost + ')';
+            try { p.ws?.send(JSON.stringify({ type:'notice', message: msgText })); } catch {}
+            return;
+          }
+          p.banked = bank - cost;
+          const initial = this.cfg.weapons.ammo.initial;
+          let announcement = '';
           if (item === 'shotgun') {
-            if (bank >= cost) {
-              p.banked = bank - cost;
-              p.weapon = 'shotgun';
-              p.shotgunAmmo = Math.max(p.shotgunAmmo||0, this.cfg.weapons.ammo.initial.shotgun);
-              this.broadcast('notice', { message: `${p.name} purchased Shotgun! (-${cost} banked)` });
-            } else {
-              try { p.ws?.send(JSON.stringify({ type:'notice', message:`Not enough banked (need ${cost})` })); } catch {}
-            }
+            p.weapon = 'shotgun';
+            p.shotgunAmmo = Math.max(p.shotgunAmmo||0, initial.shotgun);
+            announcement = p.name + ' purchased Shotgun! (-' + cost + ' banked)';
           } else if (item === 'smg') {
-            if (bank >= cost) {
-              p.banked = bank - cost;
-              p.weapon = 'smg';
-              p.smgAmmo = Math.max(p.smgAmmo||0, this.cfg.weapons.ammo.initial.smg);
-              this.broadcast('notice', { message: `${p.name} purchased SMG! (-${cost} banked)` });
-            } else {
-              try { p.ws?.send(JSON.stringify({ type:'notice', message:`Not enough banked (need ${cost})` })); } catch {}
-            }
+            p.weapon = 'smg';
+            p.smgAmmo = Math.max(p.smgAmmo||0, initial.smg);
+            announcement = p.name + ' purchased SMG! (-' + cost + ' banked)';
+          } else if (item === 'railgun') {
+            p.weapon = 'railgun';
+            p.railgunAmmo = Math.max(p.railgunAmmo||0, initial.railgun);
+            announcement = p.name + ' unlocked Railgun! (-' + cost + ' banked)';
+          } else if (item === 'flamethrower') {
+            p.weapon = 'flamethrower';
+            p.flamethrowerAmmo = Math.max(p.flamethrowerAmmo||0, initial.flamethrower);
+            announcement = p.name + ' unlocked Flamethrower! (-' + cost + ' banked)';
+          }
+          if (announcement) {
+            this.broadcast('notice', { message: announcement });
           }
           break;
         }
@@ -538,7 +553,7 @@ export class RoomDO {
           const p = this.players.get(pid);
           if (!p || p.role !== "streamer") return;
           const w = String(msg.weapon || "");
-          if (w === "pistol" || w === "smg" || w === "shotgun" || w === "bat") {
+          if (w === "pistol" || w === "smg" || w === "shotgun" || w === "railgun" || w === "flamethrower" || w === "bat") {
             p.weapon = w;
           }
           break;
@@ -686,6 +701,8 @@ export class RoomDO {
     pistolAmmo: p.pistolAmmo,
     smgAmmo: p.smgAmmo,
     shotgunAmmo: p.shotgunAmmo,
+    railgunAmmo: p.railgunAmmo,
+    flamethrowerAmmo: p.flamethrowerAmmo,
     meleeAt: p.lastMeleeAt || 0,
     meleeDirX: p.meleeDirX || 0,
     meleeDirY: p.meleeDirY || 0,

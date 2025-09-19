@@ -1,5 +1,5 @@
 import type { RoomDO } from '../index';
-import type { Bullet } from '../room-types';
+import type { Bullet, Player, AIZombie } from '../room-types';
 import { XP_PER_KILL, XP_THRESHOLDS, statsFor } from '../../upgrades';
 
 
@@ -218,6 +218,12 @@ export function refundAmmoOnKill(ctx: RoomDO, owner: Player, pct: number) {
   } else if (w === 'shotgun') {
     const add = Math.max(1, Math.floor(ctx.cfg.weapons.ammo.max.shotgun * pct));
     owner.shotgunAmmo = Math.min(ctx.cfg.weapons.ammo.max.shotgun, (owner.shotgunAmmo||0) + add);
+  } else if (w === 'railgun') {
+    const add = Math.max(1, Math.floor(ctx.cfg.weapons.ammo.max.railgun * pct));
+    owner.railgunAmmo = Math.min(ctx.cfg.weapons.ammo.max.railgun, (owner.railgunAmmo||0) + add);
+  } else if (w === 'flamethrower') {
+    const add = Math.max(1, Math.floor(ctx.cfg.weapons.ammo.max.flamethrower * pct));
+    owner.flamethrowerAmmo = Math.min(ctx.cfg.weapons.ammo.max.flamethrower, (owner.flamethrowerAmmo||0) + add);
   }
 
 }

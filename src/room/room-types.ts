@@ -44,10 +44,12 @@ export interface Player {
   weaponBoostUntil?: number;
   emote?: string;
   emoteUntil?: number;
-  weapon?: 'pistol' | 'smg' | 'shotgun' | 'bat';
+  weapon?: 'pistol' | 'smg' | 'shotgun' | 'railgun' | 'flamethrower' | 'bat';
   pistolAmmo?: number;
   smgAmmo?: number;
   shotgunAmmo?: number;
+  railgunAmmo?: number;
+  flamethrowerAmmo?: number;
   meleeDirX?: number;
   meleeDirY?: number;
   dashUntil?: number;

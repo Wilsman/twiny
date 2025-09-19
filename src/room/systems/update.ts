@@ -420,6 +420,89 @@ export function update(ctx: RoomDO) {
           p.shotgunAmmo = Math.max(0, (p.shotgunAmmo ?? 0) - ammoCost);
           p.lastShotAt = nowMs;
         }
+      } else if (weapon === "railgun") {
+        const baseCd = boostedW ? ctx.cfg.weapons.cooldownMs.railgun.boosted : ctx.cfg.weapons.cooldownMs.railgun.base;
+        const cd = baseCd / Math.max(0.01, s.fireRateMul);
+        const ammoCost = Math.max(1, Math.floor(2 * s.ammoEfficiencyMul));
+        if (since >= cd && (p.railgunAmmo ?? 0) >= ammoCost) {
+          const railCfg = ctx.cfg.weapons.projectile.railgun;
+          const speedB = (boostedW ? railCfg.speed * 1.1 : railCfg.speed) * s.projectileSpeedMul;
+          const radiusMul = railCfg.width || 1;
+          const baseStatus = statusFrom(s);
+          const spawned: BulletSpawnSpec[] = [{
+            pos: { x: p.pos.x, y: p.pos.y },
+            vel: { x: nx * speedB, y: ny * speedB },
+            ttl: railCfg.ttl,
+            ownerId: p.id,
+            meta: {
+              damage: (ctx.cfg.weapons.damage.railgun || 0) * s.damageMul,
+              radius: ctx.cfg.radii.bulletMargin * radiusMul * s.bulletSizeMul,
+              pierce: s.pierce + (railCfg.pierce || 0),
+              bounce: s.bounce,
+              ricochet: s.ricochet,
+              chain: s.chain,
+              status: baseStatus,
+              critChance: Math.min(1, s.critChance + 0.25),
+              critMul: Math.max(s.critMul, 2.4),
+            }
+          }];
+          for (const [id, n] of Object.entries(p.mods||{})) {
+            (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
+          }
+          for (const sp of spawned) {
+            ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            ctx.trackBulletFired(p);
+          }
+          p.railgunAmmo = Math.max(0, (p.railgunAmmo ?? 0) - ammoCost);
+          p.lastShotAt = nowMs;
+        }
+      } else if (weapon === "flamethrower") {
+        const baseCd = boostedW ? ctx.cfg.weapons.cooldownMs.flamethrower.boosted : ctx.cfg.weapons.cooldownMs.flamethrower.base;
+        const cd = baseCd / Math.max(0.01, s.fireRateMul);
+        const ammoCost = Math.max(1, Math.floor(3 * s.ammoEfficiencyMul));
+        if (since >= cd && (p.flamethrowerAmmo ?? 0) >= ammoCost) {
+          const flameCfg = ctx.cfg.weapons.projectile.flamethrower;
+          const spawned: BulletSpawnSpec[] = [];
+          for (let i = 0; i < flameCfg.shards; i++) {
+            const spread = (Math.random() - 0.5) * flameCfg.cone * s.spreadMul;
+            const cs = Math.cos(spread);
+            const sn = Math.sin(spread);
+            const vx = nx * cs - ny * sn;
+            const vy = nx * sn + ny * cs;
+            const baseStatus = statusFrom(s);
+            const flameStatus: any = baseStatus ? { ...baseStatus } : {};
+            flameStatus.burnChance = Math.max(flameStatus.burnChance ?? 0, 1);
+            flameStatus.burnMs = Math.max(flameStatus.burnMs ?? 0, flameCfg.burnMs);
+            flameStatus.burnDps = Math.max(flameStatus.burnDps ?? 0, flameCfg.burnDps);
+            const finalStatus = Object.keys(flameStatus).length ? flameStatus : undefined;
+            spawned.push({
+              pos: { x: p.pos.x, y: p.pos.y },
+              vel: { x: vx * flameCfg.speed * s.projectileSpeedMul, y: vy * flameCfg.speed * s.projectileSpeedMul },
+              ttl: flameCfg.ttl,
+              ownerId: p.id,
+              meta: {
+                damage: (ctx.cfg.weapons.damage.flamethrower || 0) * s.damageMul,
+                radius: ctx.cfg.radii.bulletMargin * 0.75 * s.bulletSizeMul,
+                pierce: Math.max(0, s.pierce - 1),
+                bounce: Math.max(0, s.bounce - 1),
+                ricochet: s.ricochet,
+                chain: s.chain,
+                status: finalStatus,
+                critChance: s.critChance,
+                critMul: s.critMul,
+              }
+            });
+          }
+          for (const [id, n] of Object.entries(p.mods||{})) {
+            (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
+          }
+          for (const sp of spawned) {
+            ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
+            ctx.trackBulletFired(p);
+          }
+          p.flamethrowerAmmo = Math.max(0, (p.flamethrowerAmmo ?? 0) - ammoCost);
+          p.lastShotAt = nowMs;
+        }
       }
     }
     // Always-available bat (melee) on separate input
@@ -968,7 +1051,9 @@ export function update(ctx: RoomDO) {
           pl.pistolAmmo = Math.min((pl.pistolAmmo ?? 0) + ctx.cfg.weapons.ammo.pickupGain.pistol, ctx.cfg.weapons.ammo.max.pistol);
           pl.smgAmmo = Math.min((pl.smgAmmo ?? 0) + ctx.cfg.weapons.ammo.pickupGain.smg, ctx.cfg.weapons.ammo.max.smg);
           pl.shotgunAmmo = Math.min((pl.shotgunAmmo ?? 0) + ctx.cfg.weapons.ammo.pickupGain.shotgun, ctx.cfg.weapons.ammo.max.shotgun);
-          ctx.broadcast("notice", { message: "Pistol Ammo refilled for all weapons!" });
+          pl.railgunAmmo = Math.min((pl.railgunAmmo ?? 0) + ctx.cfg.weapons.ammo.pickupGain.railgun, ctx.cfg.weapons.ammo.max.railgun);
+          pl.flamethrowerAmmo = Math.min((pl.flamethrowerAmmo ?? 0) + ctx.cfg.weapons.ammo.pickupGain.flamethrower, ctx.cfg.weapons.ammo.max.flamethrower);
+          ctx.broadcast("notice", { message: "Ammo cache redistributed across the arsenal!" });
           ctx.trackPickupTaken(pl, p.type);
           taken = true; break;
         }
@@ -1074,15 +1159,15 @@ export function update(ctx: RoomDO) {
 
   // Extractions removed
 
-  const s = [...ctx.players.values()].find(p => p.role === "streamer");
+  const streamerPlayer = [...ctx.players.values()].find(p => p.role === "streamer");
 
   // Round timer: end raid when time elapses
   if ((ctx.roundEndTime || 0) > 0 && now >= (ctx.roundEndTime as number)) {
-    if (s) {
-      s.alive = false;
-      s.vel.x = 0;
-      s.vel.y = 0;
-      s.input = {
+    if (streamerPlayer) {
+      streamerPlayer.alive = false;
+      streamerPlayer.vel.x = 0;
+      streamerPlayer.vel.y = 0;
+      streamerPlayer.input = {
         up: false,
         down: false,
         left: false,
@@ -1090,11 +1175,11 @@ export function update(ctx: RoomDO) {
         shoot: false,
         melee: false,
         dash: false,
-        aimX: s.pos.x,
-        aimY: s.pos.y,
+        aimX: streamerPlayer.pos.x,
+        aimY: streamerPlayer.pos.y,
       };
     }
-    ctx.endRound('timeout', { streamer: s || undefined });
+    ctx.endRound('timeout', { streamer: streamerPlayer || undefined });
     return;
   }
 
