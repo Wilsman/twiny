@@ -581,7 +581,7 @@ export function generateBossLoot(ctx: RoomDO, boss: Boss) {
 }
 
 export function publicBoss(ctx: RoomDO, boss: any) {
-  const visual = ctx.cfg.bosses.types[boss.type].visual;
+  const bossConfig = ctx.cfg.bosses.types[boss.type];
   return {
     id: boss.id,
     type: boss.type,
@@ -592,7 +592,10 @@ export function publicBoss(ctx: RoomDO, boss: any) {
     state: boss.state,
     enraged: boss.enraged,
     phased: boss.phased,
-    visual: visual
+    visual: bossConfig.visual,
+    ...(boss.type === 'shadowLord'
+      ? { lifeDrainRange: bossConfig.abilities.lifeDrain.range }
+      : {})
   };
 
 }
