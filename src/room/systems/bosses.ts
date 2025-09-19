@@ -1,6 +1,6 @@
 import type { RoomDO } from '../index';
 import type { Boss, BossMinion, PoisonField, BossType } from '../../types';
-import type { Player, Vec } from '../room-types';
+import type { PickupType, Player } from '../room-types';
 
 
 export function updateBossSystem(ctx: RoomDO, now: number) {
