@@ -62,6 +62,23 @@
     </aside>
   </div>
 
+  <div id="raidEndOverlay" class="raid-end-overlay hidden">
+    <div class="raid-end-card">
+      <div class="raid-end-title">Streamer Down!</div>
+      <p class="raid-end-description" id="raidEndDescription">
+        The streamer has been defeated. Waiting for the next raid...
+      </p>
+      <div class="raid-end-leaderboard" id="raidEndLeaderboardWrapper">
+        <div class="raid-end-label">Top zombies this round</div>
+        <ol id="raidEndLeaderboard"></ol>
+      </div>
+      <div class="raid-end-actions">
+        <button id="raidEndStay">Stay for restart</button>
+        <button id="raidEndLeave" class="raid-end-leave">Return to menu</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { connect, nameStorage, minimalCanvas, suppressPageHotkeys, inputController, createLatencyMonitor } from '/common.js';
 
@@ -77,6 +94,7 @@
     const effects = [];
     // Damage numbers for floating damage display
     let damageNumbers = [];
+    let roundActive = false;
     // Smoothing for 20Hz -> 60fps render
     const smooth = new Map(); // id -> {x,y}
     const SMOOTH_TAU = 90; // ms
@@ -116,6 +134,11 @@
     const chatInput = document.getElementById('chatInput');
     const chatMessagesEl = document.getElementById('chatMessages');
     const nerdToggleBtn = document.getElementById('nerdToggle');
+    const raidEndOverlay = document.getElementById('raidEndOverlay');
+    const raidEndDescription = document.getElementById('raidEndDescription');
+    const raidEndLeaderboard = document.getElementById('raidEndLeaderboard');
+    const raidEndStayBtn = document.getElementById('raidEndStay');
+    const raidEndLeaveBtn = document.getElementById('raidEndLeave');
     // Nerd panel overlay element
     const nerdPanel = document.createElement('div');
     nerdPanel.id = 'nerdPanel';
@@ -174,7 +197,79 @@
       if (pingIv) { clearInterval(pingIv); pingIv = null; }
       if (sendNeutralHandler) { window.removeEventListener('blur', sendNeutralHandler); sendNeutralHandler=null; }
       if (visHandler) { document.removeEventListener('visibilitychange', visHandler); visHandler=null; }
+      roundActive = false;
+      damageNumbers = [];
+      trails.clear();
+      hideRaidEndOverlay();
     }
+
+    const roundEndCauseMessages = {
+      zombie_touch: 'The horde swarmed the streamer!',
+      ai_zombie_touch: 'An AI zombie landed the final blow.',
+      pit: 'The streamer fell into a pit.',
+      spikes: 'The streamer was impaled on spikes.',
+      poison: 'A poison cloud finished the streamer.',
+    };
+
+    function formatRoundEndCause(cause) {
+      if (!cause) return 'The streamer has been defeated!';
+      return roundEndCauseMessages[cause] || 'The streamer has been defeated!';
+    }
+
+    function renderRaidEndLeaderboard(players) {
+      if (!raidEndLeaderboard) return;
+      raidEndLeaderboard.innerHTML = '';
+      const zombies = (players || []).filter(p => p.role === 'zombie');
+      if (!zombies.length) {
+        const li = document.createElement('li');
+        li.className = 'raid-end-empty';
+        li.textContent = 'No zombies were in the raid.';
+        raidEndLeaderboard.appendChild(li);
+        return;
+      }
+      const sorted = zombies.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+      const top = sorted.slice(0, 5);
+      for (const [idx, player] of top.entries()) {
+        const li = document.createElement('li');
+        const rank = document.createElement('span');
+        rank.className = 'raid-end-rank';
+        rank.textContent = `#${idx + 1}`;
+        const name = document.createElement('span');
+        name.className = 'raid-end-name';
+        name.textContent = player.name || 'Zombie';
+        const score = document.createElement('span');
+        score.className = 'raid-end-score';
+        score.textContent = (player.score || 0).toLocaleString();
+        li.appendChild(rank);
+        li.appendChild(name);
+        li.appendChild(score);
+        raidEndLeaderboard.appendChild(li);
+      }
+    }
+
+    function showRaidEndOverlay(payload) {
+      if (!raidEndOverlay) return;
+      if (raidEndDescription) {
+        raidEndDescription.textContent = formatRoundEndCause(payload?.cause);
+      }
+      renderRaidEndLeaderboard(state.players);
+      raidEndOverlay.classList.remove('hidden');
+    }
+
+    function hideRaidEndOverlay() {
+      if (!raidEndOverlay) return;
+      raidEndOverlay.classList.add('hidden');
+    }
+
+    raidEndStayBtn?.addEventListener('click', () => {
+      hideRaidEndOverlay();
+    });
+
+    raidEndLeaveBtn?.addEventListener('click', () => {
+      hideRaidEndOverlay();
+      leave();
+      window.location.href = '/index.html';
+    });
 
     function extractRoomId(val){
       const s = String(val||'').trim();
@@ -201,6 +296,7 @@
         status.textContent = 'connected';
         status.dataset.state = 'connected';
         document.body.classList.add('connected');
+        roundActive = true;
         ws.send(JSON.stringify({ type:'join_room', role:'zombie', name }));
         joinBtn.textContent = 'Leave';
         nameEl.disabled = true; shuffleBtn.disabled = true;
@@ -218,8 +314,26 @@
           } catch {}
         }
         if (msg.type === 'joined') { arena = msg.arena; playerId = msg.playerId; }
+        if (msg.type === 'round_end') {
+          roundActive = false;
+          status.textContent = 'connected • raid ended';
+          status.dataset.state = 'ended';
+          appendChat('System', 'Raid ended');
+          showRaidEndOverlay(msg);
+        }
+        if (msg.type === 'round_restart') {
+          roundActive = true;
+          status.textContent = 'connected • restarting raid';
+          status.dataset.state = 'connected';
+          damageNumbers = [];
+          trails.clear();
+          prevBulletPos = new Map();
+          effects.length = 0;
+          hideRaidEndOverlay();
+        }
         if (msg.type === 'state') {
           stateMsgCount++;
+          roundActive = msg.roundActive !== false;
           // impact effects
           const curMap = new Map(msg.bullets.map(b=>[b.id,{x:b.x,y:b.y}]));
           for (const [id,pos] of prevBulletPos) {
@@ -248,8 +362,14 @@
           }
 
           state = msg; const ping = Math.max(0, Date.now() - (msg.t||Date.now()));
-          status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`; 
-          status.dataset.state = 'connected';
+          if (roundActive) {
+            status.textContent = `connected • ${ping} ms • players: ${msg.players.length}`;
+            status.dataset.state = 'connected';
+          } else {
+            status.textContent = 'connected • raid ended';
+            status.dataset.state = 'ended';
+            renderRaidEndLeaderboard(msg.players);
+          }
           state.remainingTime = msg.remainingTime;
           updateTimer(state.remainingTime);
           updatePlayerList(msg.players);
@@ -273,7 +393,7 @@
       });
       // Send continuous movement state for smooth input like streamer
       inputIv = setInterval(() => {
-        if (ws && ws.readyState===1) {
+        if (ws && ws.readyState===1 && roundActive) {
           const { up,down,left,right,shoot } = input;
           const aimWX = camX + (input.aimX / zoom);
           const aimWY = camY + (input.aimY / zoom);
@@ -282,7 +402,7 @@
       }, 50);
 
       // If the tab loses focus while holding a key, send a neutral input
-      sendNeutralHandler = () => { if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, dash:false, aimX:0, aimY:0 })); };
+      sendNeutralHandler = () => { if (ws && ws.readyState===1 && roundActive) ws.send(JSON.stringify({ type:'input', up:false, down:false, left:false, right:false, shoot:false, melee:false, dash:false, aimX:0, aimY:0 })); };
       visHandler = () => { if (document.hidden) sendNeutralHandler(); };
       window.addEventListener('blur', sendNeutralHandler);
       document.addEventListener('visibilitychange', visHandler);
@@ -481,6 +601,7 @@
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 0;
         if (p.role==='streamer'){
+          if (p.alive === false) { ctx.restore(); continue; }
           ctx.strokeStyle = '#4caf50';
           ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(sp.x,sp.y,10,0,Math.PI*2); ctx.stroke();

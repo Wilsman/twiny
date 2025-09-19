@@ -52,6 +52,7 @@ export function broadcastState(ctx: RoomDO) {
     arena: { w: ctx.W, h: ctx.H },
     remainingTime: Math.max(0, Math.floor(((ctx.roundEndTime || Date.now()) - Date.now()) / 1000)),
     chatEnabled: ctx.chatEnabled,
+    roundActive: ctx.roundActive,
   };
   const msg = JSON.stringify(snapshot);
   for (const p of ctx.players.values()) {
