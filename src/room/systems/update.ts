@@ -3,10 +3,20 @@ import { XP_PER_KILL, XP_THRESHOLDS, statsFor, statusFrom, MOD_INDEX } from '../
 import type { Bullet, Player, Pickup, PickupType, Vec, Rect, WeaponDrop } from '../room-types';
 import type { BulletSpawnSpec } from '../../types';
 import { TileId } from '../../config';
+import { triggerProcsOnHit, triggerProcsOnKill, triggerProcsOnShoot } from './weapon-procs';
 
 
 export function update(ctx: RoomDO) {
   const now = Date.now();
+  const cachedStats = new Map<string, ReturnType<typeof statsFor>>();
+  const getPlayerStats = (player: Player) => {
+    let snapshot = cachedStats.get(player.id);
+    if (!snapshot) {
+      snapshot = statsFor(player);
+      cachedStats.set(player.id, snapshot);
+    }
+    return snapshot;
+  };
 
   let streamer = [...ctx.players.values()].find(p => p.role === "streamer");
 
@@ -73,7 +83,7 @@ export function update(ctx: RoomDO) {
     if (p.role === 'streamer' && ((p as any).gooSlowUntil || 0) > now) baseSpeed *= ctx.cfg.zombies.spitter.streamerSlowMul;
     // Apply movement speed upgrades for streamer
     if (p.role === 'streamer') {
-      const { s } = statsFor(p);
+      const { s } = getPlayerStats(p);
       baseSpeed *= s.movementSpeedMul;
     }
     const boosted = p.role === "zombie" && (p.boostUntil || 0) > now;
@@ -132,7 +142,7 @@ export function update(ctx: RoomDO) {
       if (!p.input.dash && (p as any)._dashLatched) (p as any)._dashLatched = false;
       // Apply dash speed multiplier if active
       if ((p.dashUntil || 0) > nowMs) {
-        const { s } = statsFor(p);
+        const { s } = getPlayerStats(p);
         speed *= ctx.cfg.dash.speedMultiplier * s.dashDistanceMul;
         // Trigger dash reload upgrade
         if (s.dashReloadPct > 0 && !((p as any).dashReloadTriggered)) {
@@ -316,7 +326,9 @@ export function update(ctx: RoomDO) {
       const d = Math.hypot(dirx, diry) || 1;
       const nx = dirx / d, ny = diry / d;
       const since = nowMs - (p.lastShotAt || 0);
-      let { s } = statsFor(p);
+      const statSnapshot = getPlayerStats(p);
+      let s = { ...statSnapshot.s };
+      const procs = statSnapshot.procs;
       // Apply berserker rage damage bonus
       if (s.berserkerStacks > 0) {
         const recentKills = ((p as any).berserkerKills || []).filter((t: number) => now - t <= 5000);
@@ -351,6 +363,7 @@ export function update(ctx: RoomDO) {
           for (const [id, n] of Object.entries(p.mods||{})) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
+          triggerProcsOnShoot(ctx, p, 'pistol', spawned, s, procs);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             // Track bullet fired
@@ -390,6 +403,7 @@ export function update(ctx: RoomDO) {
           for (const [id, n] of Object.entries(p.mods||{})) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
+          triggerProcsOnShoot(ctx, p, 'smg', spawned, s, procs);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             // Track bullet fired
@@ -431,6 +445,7 @@ export function update(ctx: RoomDO) {
           for (const [id, n] of Object.entries(p.mods||{})) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
+          triggerProcsOnShoot(ctx, p, 'shotgun', spawned, s, procs);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             // Track bullet fired
@@ -468,6 +483,7 @@ export function update(ctx: RoomDO) {
           for (const [id, n] of Object.entries(p.mods||{})) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
+          triggerProcsOnShoot(ctx, p, 'railgun', spawned, s, procs);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             ctx.trackBulletFired(p);
@@ -515,6 +531,7 @@ export function update(ctx: RoomDO) {
           for (const [id, n] of Object.entries(p.mods||{})) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
+          triggerProcsOnShoot(ctx, p, 'flamethrower', spawned, s, procs);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             ctx.trackBulletFired(p);
@@ -723,6 +740,11 @@ export function update(ctx: RoomDO) {
       continue;
     }
 
+    const owner = ctx.players.get(b.ownerId);
+    const ownerSnapshot = owner ? getPlayerStats(owner) : undefined;
+    const ownerStats = ownerSnapshot ? ownerSnapshot.s : undefined;
+    const ownerProcs = ownerSnapshot ? ownerSnapshot.procs : undefined;
+
     // Collision with zombies (class-based HP)
     let consumed = false;
     for (const p of ctx.players.values()) {
@@ -735,15 +757,13 @@ export function update(ctx: RoomDO) {
         p.zHp = Math.max(0, (p.zHp ?? ctx.cfg.zombies.baseHp) - dealt);
         // Add damage number for bullet hit
         ctx.addDamageNumber(p.pos.x, p.pos.y, dealt, crit, false);
-        const owner = ctx.players.get(b.ownerId);
         // Track bullet hit
         if (owner) {
           ctx.trackBulletHit(owner);
           ctx.trackDamageDealt(owner, dealt);
         }
-        const ownerStats = owner ? statsFor(owner).s : undefined;
         // Lifesteal on hit
-        if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
+        if (owner && ownerStats?.lifestealPct > 0 && owner.role === 'streamer') {
           const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
           owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
         };
@@ -763,21 +783,27 @@ export function update(ctx: RoomDO) {
             p.bleeds.push({ until: nowMs + st.bleedMs, dps: st.bleedDps, nextTick: nowMs + 1000, ownerId: b.ownerId });
           }
         }
+        const killed = (p.zHp ?? 0) <= 0;
         // Call onHit hooks
         if (owner && owner.mods) {
           for (const [id, n] of Object.entries(owner.mods)) {
-            (MOD_INDEX as any)[id]?.hooks?.onHit?.({ room: ctx as any, bullet: b, targetId: p.id, killed: false, stats: ownerStats || {} });
+            (MOD_INDEX as any)[id]?.hooks?.onHit?.({ room: ctx as any, bullet: b, targetId: p.id, killed, stats: ownerStats || {} });
           }
         }
-        let killed = false;
-        if ((p.zHp ?? 0) <= 0) {
-          p.alive = false; killed = true;
+        triggerProcsOnHit(ctx, owner, b, ownerStats, ownerProcs, {
+          targetId: p.id,
+          targetType: 'playerZombie',
+          killed,
+          impact: { x: b.pos.x, y: b.pos.y },
+        });
+        if (killed) {
+          p.alive = false;
           // Drop ammo on zombie death
           ctx.pickups.push({ id: crypto.randomUUID().slice(0,6), type: 'ammo', x: p.pos.x, y: p.pos.y });
           const id = p.id;
           setTimeout(() => { const zp = ctx.players.get(id); if (zp) { zp.pos = ctx.spawnZombiePos(); zp.alive = true; zp.zHp = zp.zMaxHp; } }, ctx.cfg.combat.respawnMs);
           // Reload on kill
-          if (owner && ownerStats && ownerStats.reloadOnKillPct > 0 && owner.role === 'streamer') {
+          if (owner && ownerStats?.reloadOnKillPct > 0 && owner.role === 'streamer') {
             ctx.refundAmmoOnKill(owner, ownerStats.reloadOnKillPct);
           }
           // Reward streamer (only on kill)
@@ -791,7 +817,7 @@ export function update(ctx: RoomDO) {
             }
           }
           // Call onKill hooks and handle berserker stacks
-          if (killed && owner && owner.mods) {
+          if (owner && owner.mods) {
             for (const [id, n] of Object.entries(owner.mods)) {
               (MOD_INDEX as any)[id]?.hooks?.onKill?.({ room: ctx as any, killerId: owner.id, victimId: p.id, stats: ownerStats || {} });
             }
@@ -806,6 +832,11 @@ export function update(ctx: RoomDO) {
               owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + healAmount);
             }
           }
+          triggerProcsOnKill(ctx, owner, b, ownerStats, ownerProcs, {
+            victimId: p.id,
+            targetType: 'playerZombie',
+            impact: { x: p.pos.x, y: p.pos.y },
+          });
         }
         // Handle pierce or ricochet
         if (b.meta.pierce > 0) {
@@ -837,15 +868,13 @@ export function update(ctx: RoomDO) {
           zombie.hp = Math.max(0, zombie.hp - dealt);
           // Add damage number for bullet hit on AI zombie
           ctx.addDamageNumber(zombie.pos.x, zombie.pos.y, dealt, crit, false);
-          const owner = ctx.players.get(b.ownerId);
           // Track bullet hit
           if (owner) {
             ctx.trackBulletHit(owner);
             ctx.trackDamageDealt(owner, dealt);
           }
-          const ownerStats = owner ? statsFor(owner).s : undefined;
           // Lifesteal
-          if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
+          if (owner && ownerStats?.lifestealPct > 0 && owner.role === 'streamer') {
             const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
             owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
           }
@@ -859,7 +888,7 @@ export function update(ctx: RoomDO) {
           }
           // Kill check for reload-on-kill
           const wasKilled = zombie.hp <= 0;
-          if (wasKilled && owner && ownerStats && ownerStats.reloadOnKillPct > 0 && owner.role === 'streamer') {
+          if (wasKilled && owner && ownerStats?.reloadOnKillPct > 0 && owner.role === 'streamer') {
             ctx.refundAmmoOnKill(owner, ownerStats.reloadOnKillPct);
           }
           // Reward streamer (only on kill)
@@ -872,12 +901,25 @@ export function update(ctx: RoomDO) {
             const need = XP_THRESHOLDS(owner.level||0);
             if ((owner.xp||0) >= need) { owner.xp -= need; owner.level = (owner.level||0) + 1; ctx.offerUpgrades(owner.id); }
           }
+          triggerProcsOnHit(ctx, owner, b, ownerStats, ownerProcs, {
+            targetId: 'ai:' + zombie.id,
+            targetType: 'aiZombie',
+            killed: wasKilled,
+            impact: { x: b.pos.x, y: b.pos.y },
+          });
           // Pierce/ricochet handling
           if (b.meta.pierce > 0) { b.meta.pierce -= 1; aliveBullets.push(b); }
           else if (b.meta.ricochet > 0 && ctx.retargetBulletRicochet(b, 'ai:'+zombie.id)) { b.meta.ricochet -= 1; aliveBullets.push(b); }
           else { consumed = true; }
           // Chain lightning
           if (b.meta.chain > 0) { ctx.applyChainDamage(b, { x: b.pos.x, y: b.pos.y }, 'ai:'+zombie.id, b.meta.chain, Math.round((b.meta.damage||0)*0.7)); }
+          if (wasKilled) {
+            triggerProcsOnKill(ctx, owner, b, ownerStats, ownerProcs, {
+              victimId: 'ai:' + zombie.id,
+              targetType: 'aiZombie',
+              impact: { x: zombie.pos.x, y: zombie.pos.y },
+            });
+          }
           hitAI = true;
           break;
         }
@@ -901,17 +943,22 @@ export function update(ctx: RoomDO) {
             // Add damage number for boss hit
             ctx.addDamageNumber(boss.pos.x, boss.pos.y, dealt, crit, false);
             
-            const owner = ctx.players.get(b.ownerId);
-            const ownerStats = owner ? statsFor(owner).s : undefined;
-            
             // Lifesteal on boss hit
-            if (owner && ownerStats && ownerStats.lifestealPct > 0 && owner.role === 'streamer') {
+            if (owner && ownerStats?.lifestealPct > 0 && owner.role === 'streamer') {
               const heal = Math.max(0, Math.floor(dealt * ownerStats.lifestealPct));
               owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
             }
-            
+
+            const bossKilled = boss.hp <= 0;
+            triggerProcsOnHit(ctx, owner, b, ownerStats, ownerProcs, {
+              targetId: 'boss:' + boss.id,
+              targetType: 'boss',
+              killed: bossKilled,
+              impact: { x: b.pos.x, y: b.pos.y },
+            });
+
             // Check if boss died
-            if (boss.hp <= 0 && (boss.state as any) !== "dying") {
+            if (bossKilled && (boss.state as any) !== "dying") {
               boss.state = "dying";
               // Reward streamer for boss kill
               if (owner && owner.role === 'streamer') {
@@ -928,8 +975,13 @@ export function update(ctx: RoomDO) {
                   ctx.offerUpgrades(owner.id);
                 }
               }
+              triggerProcsOnKill(ctx, owner, b, ownerStats, ownerProcs, {
+                victimId: 'boss:' + boss.id,
+                targetType: 'boss',
+                impact: { x: boss.pos.x, y: boss.pos.y },
+              });
             }
-            
+
             // Pierce/ricochet handling
             if (b.meta.pierce > 0) {
               b.meta.pierce -= 1;

@@ -10,9 +10,25 @@ export type ModId =
   | 'magnet_radius' | 'on_extract_refund' | 'ammo_efficiency'
   | 'movement_speed' | 'dash_distance' | 'double_jump' | 'ghost_walk'
   | 'berserker' | 'vampire_aura' | 'time_dilation' | 'bullet_time'
-  | 'explosive_death' | 'shield_regen';
+  | 'explosive_death' | 'shield_regen'
+  | 'void_hooks' | 'volatile_payload' | 'sanguine_cycle';
 
 export type Rarity = 'common'|'uncommon'|'rare'|'epic'|'legendary';
+
+export type WeaponProcId =
+  | 'arc_burst'
+  | 'gravity_snare'
+  | 'volatile_core'
+  | 'siphon_bloom';
+
+export interface WeaponProcGrant {
+  id: WeaponProcId;
+  flatChance?: number;
+  chancePerStack?: number;
+  maxChance?: number;
+  flatPotency?: number;
+  potencyPerStack?: number;
+}
 
 export interface ModDef {
   id: ModId;
@@ -24,6 +40,8 @@ export interface ModDef {
   apply?: (s: StatBlock, stacks: number) => void;
   // Event hooks (optional):
   hooks?: Partial<ModHooks>;
+  // Proc-based effects that can be shared across weapons
+  weaponProcs?: WeaponProcGrant[];
 }
 
 export interface StatBlock {
@@ -67,6 +85,13 @@ export interface ModHooks {
   onHit?: (ctx: HitContext) => void;
   // Invoked when a zombie dies
   onKill?: (ctx: KillContext) => void;
+}
+
+export interface WeaponProcInstance {
+  id: WeaponProcId;
+  stacks: number;
+  chance: number;
+  potency: number;
 }
 
 export interface ShotContext {
@@ -115,6 +140,48 @@ export interface BulletSpawnSpec {
   };
 }
 export type ActiveBullet = BulletSpawnSpec & { id: string };
+
+export interface WeaponProcContextBase {
+  room: any;
+  owner: any;
+  instance: WeaponProcInstance;
+  stats: StatBlock;
+}
+
+export interface WeaponProcShootContext extends WeaponProcContextBase {
+  weapon?: string;
+  bullets: BulletSpawnSpec[];
+}
+
+export interface WeaponProcHitContext extends WeaponProcContextBase {
+  bullet: ActiveBullet;
+  targetId?: string;
+  targetType?: 'playerZombie' | 'aiZombie' | 'boss';
+  killed?: boolean;
+  impact: { x: number; y: number };
+}
+
+export interface WeaponProcKillContext extends WeaponProcContextBase {
+  victimId: string;
+  bullet?: ActiveBullet;
+  targetType?: 'playerZombie' | 'aiZombie' | 'boss';
+  impact: { x: number; y: number };
+}
+
+export interface WeaponProcHooks {
+  onShoot?: (ctx: WeaponProcShootContext) => void;
+  onHit?: (ctx: WeaponProcHitContext) => void;
+  onKill?: (ctx: WeaponProcKillContext) => void;
+}
+
+export interface WeaponProcDef {
+  id: WeaponProcId;
+  name: string;
+  description: string;
+  flavor?: string;
+  cooldownMs?: number;
+  events: WeaponProcHooks;
+}
 
 export type ZombieClass = "runner" | "brute" | "spitter" | "stalker" | "bomber";
 

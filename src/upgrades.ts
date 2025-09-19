@@ -1,4 +1,4 @@
-import { ModDef, ModHooks, ModId, Rarity, StatBlock } from "./types";
+import { ModDef, ModHooks, ModId, Rarity, StatBlock, WeaponProcInstance, WeaponProcId } from "./types";
 
 // XP pacing
 export const XP_PER_KILL = 1;
@@ -20,14 +20,37 @@ export function baseStats(): StatBlock {
   };
 }
 
-export function statsFor(p: any): { s: StatBlock } {
+export function statsFor(p: any): { s: StatBlock; procs: WeaponProcInstance[] } {
   const s = baseStats();
   const mods: Partial<Record<ModId, number>> = p?.mods || {};
+  const procMap: Partial<Record<WeaponProcId, WeaponProcInstance>> = {};
   for (const [id, stacks] of Object.entries(mods) as [ModId, number][]) {
     const def = MOD_INDEX[id];
     if (def?.apply) def.apply(s, stacks);
+    if (def?.weaponProcs && stacks > 0) {
+      for (const grant of def.weaponProcs) {
+        const existing = procMap[grant.id] || {
+          id: grant.id,
+          stacks: 0,
+          chance: 0,
+          potency: 0,
+        };
+        existing.stacks += stacks;
+        if (grant.flatChance) existing.chance += grant.flatChance;
+        if (grant.chancePerStack) existing.chance += grant.chancePerStack * stacks;
+        if (grant.maxChance !== undefined) existing.chance = Math.min(existing.chance, grant.maxChance);
+        if (grant.flatPotency) existing.potency += grant.flatPotency;
+        if (grant.potencyPerStack) existing.potency += grant.potencyPerStack * stacks;
+        procMap[grant.id] = existing;
+      }
+    }
   }
-  return { s };
+  const procs = Object.values(procMap).map(proc => ({
+    ...proc,
+    chance: Math.max(0, Math.min(proc.chance, 1)),
+    potency: Math.max(0, proc.potency),
+  }));
+  return { s, procs };
 }
 
 export function statusFrom(s: StatBlock) {
@@ -64,6 +87,14 @@ export const MODS: ModDef[] = [
     apply:(s,k)=>{ s.reloadOnKillPct += 0.10*k; } },
   { id:'on_hit_explode', name:'Micro-grenades', rarity:'epic', desc:'Small explosion on hit.',
     hooks:{ onHit: ({room,bullet}) => { (room as any).spawnSmallExplosion?.(bullet); } } },
+  { id:'chain_lightning', name:'Storm Chorus', rarity:'rare', desc:'On-hit chance to arc stormlight between foes.',
+    weaponProcs:[{ id:'arc_burst', flatChance:0.06, chancePerStack:0.04, maxChance:0.45, flatPotency:1, potencyPerStack:0.75 }] },
+  { id:'void_hooks', name:'Umbral Net', rarity:'epic', desc:'Impact points lash nearby zombies toward the strike.',
+    weaponProcs:[{ id:'gravity_snare', flatChance:0.05, chancePerStack:0.03, maxChance:0.35, flatPotency:1, potencyPerStack:0.6 }] },
+  { id:'volatile_payload', name:'Volatile Payload', rarity:'epic', desc:'Killing blows may detonate the target.',
+    weaponProcs:[{ id:'volatile_core', flatChance:0.08, chancePerStack:0.05, maxChance:0.5, flatPotency:1, potencyPerStack:0.5 }] },
+  { id:'sanguine_cycle', name:'Sanguine Cycle', rarity:'uncommon', desc:'Chance to siphon a surge of health on hit.',
+    weaponProcs:[{ id:'siphon_bloom', flatChance:0.1, chancePerStack:0.06, maxChance:0.55, flatPotency:1, potencyPerStack:0.45 }] },
   { id:'shotgun_extra_pellet', name:'+Pellets', rarity:'uncommon', desc:'+1 shotgun pellet.',
     hooks:{ onShoot: ({bullets}) => { /* can be implemented to add an extra pellet where appropriate */ } } },
   { id:'smg_stability', name:'SMG Stability', rarity:'common', desc:'SMG spread −20%.',
