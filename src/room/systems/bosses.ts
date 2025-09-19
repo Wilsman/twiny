@@ -282,7 +282,10 @@ export function processBossAbilities(ctx: RoomDO, boss: Boss, now: number, strea
       
       // Life drain
       if (!boss.lastLifeDrain || now - boss.lastLifeDrain > shadowConfig.abilities.lifeDrain.cooldownMs) {
-        if (Math.random() < 0.3) {
+        const drainRange = shadowConfig.abilities.lifeDrain.range;
+        const distToStreamer = Math.hypot(boss.pos.x - streamer.pos.x, boss.pos.y - streamer.pos.y);
+
+        if (distToStreamer <= drainRange && Math.random() < 0.3) {
           ctx.shadowLordLifeDrain(boss, streamer, now);
           boss.lastLifeDrain = now;
         }
@@ -430,7 +433,12 @@ export function shadowLordLifeDrain(ctx: RoomDO, boss: Boss, streamer: Player, n
   const config = ctx.cfg.bosses.types.shadowLord.abilities.lifeDrain;
   const damage = config.dps;
   const heal = Math.round(damage * config.healMul);
-  
+
+  const distance = Math.hypot(boss.pos.x - streamer.pos.x, boss.pos.y - streamer.pos.y);
+  if (distance > config.range) {
+    return;
+  }
+
   streamer.hp = Math.max(0, (streamer.hp ?? ctx.cfg.streamer.maxHp) - damage);
   ctx.trackDamageTaken(streamer, damage);
   boss.hp = Math.min(boss.maxHp, boss.hp + heal);
