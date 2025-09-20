@@ -1,4 +1,4 @@
-import type { ModId, ActiveBullet } from '../types';
+import type { ModId, ActiveBullet, WeaponId } from '../types';
 
 export type Vec = { x: number; y: number };
 
@@ -46,7 +46,7 @@ export interface Player {
   weaponBoostUntil?: number;
   emote?: string;
   emoteUntil?: number;
-  weapon?: 'pistol' | 'smg' | 'shotgun' | 'railgun' | 'flamethrower' | 'bat';
+  weapon?: WeaponId;
   pistolAmmo?: number;
   smgAmmo?: number;
   shotgunAmmo?: number;

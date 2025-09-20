@@ -1,9 +1,37 @@
 import type { RoomDO } from '../index';
 import { XP_PER_KILL, XP_THRESHOLDS, statsFor, statusFrom, MOD_INDEX } from '../../upgrades';
 import type { Bullet, Player, Pickup, PickupType, Vec, Rect, WeaponDrop } from '../room-types';
-import type { BulletSpawnSpec } from '../../types';
+import type { BulletSpawnSpec, BulletTrait, WeaponId } from '../../types';
 import { TileId } from '../../config';
 import { triggerProcsOnHit, triggerProcsOnKill, triggerProcsOnShoot } from './weapon-procs';
+
+
+const applyBulletVisualHints = (
+  bullets: BulletSpawnSpec[],
+  weapon: WeaponId,
+  boosted: boolean,
+) => {
+  for (const spec of bullets) {
+    if (!spec) continue;
+    const visual = spec.visual || (spec.visual = {});
+    if (!visual.weapon) visual.weapon = weapon;
+    if (boosted) visual.empowered = true;
+    const traits = new Set<BulletTrait>(visual.traits || []);
+    const status = spec.meta?.status;
+    if (status) {
+      if ((status.burnChance ?? 0) > 0 || (status.burnDps ?? 0) > 0) traits.add('burn');
+      if ((status.slowChance ?? 0) > 0 || (status.slowMul ?? 1) < 1) traits.add('slow');
+      if ((status.bleedChance ?? 0) > 0 || (status.bleedDps ?? 0) > 0) traits.add('bleed');
+    }
+    if ((spec.meta?.chain ?? 0) > 0) traits.add('chain');
+    if ((spec.meta?.ricochet ?? 0) > 0) traits.add('ricochet');
+    if ((spec.meta?.pierce ?? 0) > 1) traits.add('pierce');
+    if (traits.size > 0) {
+      visual.traits = [...traits];
+    }
+    spec.visual = visual;
+  }
+};
 
 
 export function update(ctx: RoomDO) {
@@ -364,6 +392,7 @@ export function update(ctx: RoomDO) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
           triggerProcsOnShoot(ctx, p, 'pistol', spawned, s, procs);
+          applyBulletVisualHints(spawned, 'pistol', boostedW);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             // Track bullet fired
@@ -404,6 +433,7 @@ export function update(ctx: RoomDO) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
           triggerProcsOnShoot(ctx, p, 'smg', spawned, s, procs);
+          applyBulletVisualHints(spawned, 'smg', boostedW);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             // Track bullet fired
@@ -446,6 +476,7 @@ export function update(ctx: RoomDO) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
           triggerProcsOnShoot(ctx, p, 'shotgun', spawned, s, procs);
+          applyBulletVisualHints(spawned, 'shotgun', boostedW);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             // Track bullet fired
@@ -484,6 +515,7 @@ export function update(ctx: RoomDO) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
           triggerProcsOnShoot(ctx, p, 'railgun', spawned, s, procs);
+          applyBulletVisualHints(spawned, 'railgun', boostedW);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             ctx.trackBulletFired(p);
@@ -532,6 +564,7 @@ export function update(ctx: RoomDO) {
             (MOD_INDEX as any)[id]?.hooks?.onShoot?.({ room: ctx as any, playerId: p.id, bullets: spawned, stats: s });
           }
           triggerProcsOnShoot(ctx, p, 'flamethrower', spawned, s, procs);
+          applyBulletVisualHints(spawned, 'flamethrower', boostedW);
           for (const sp of spawned) {
             ctx.bullets.push({ id: crypto.randomUUID().slice(0,6), ...sp });
             ctx.trackBulletFired(p);
