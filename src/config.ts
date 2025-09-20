@@ -1,7 +1,7 @@
 export type GameConfig = {
   arena: { width: number; height: number };
   ticks: { mainMs: number; pickupMs: number };
-  round: { durationMs: number };
+  round: { durationMs: number }; // 15 minutes in milliseconds
   speeds: { streamer: number; zombie: number; zombieBoostMultiplier: number; zombieSlowMultiplier: number };
   streamer: { maxHp: number };
   combat: { zombieTouchDamage: number; knockbackStep: number; respawnMs: number };
@@ -150,7 +150,7 @@ export type GameConfig = {
 export const CONFIG: GameConfig = {
   arena: { width: 7200, height: 4050 },
   ticks: { mainMs: 50, pickupMs: 500 },
-  round: { durationMs: 5 * 60 * 1000 },
+  round: { durationMs: 15 * 60 * 1000 }, // 15 minutes
   speeds: { streamer: 175, zombie: 65, zombieBoostMultiplier: 1.75, zombieSlowMultiplier: 0.55 },
   streamer: { maxHp: 100 },
   combat: { zombieTouchDamage: 10, knockbackStep: 15, respawnMs: 800 },
