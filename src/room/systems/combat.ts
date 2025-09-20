@@ -77,7 +77,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
           const owner = ctx.players.get(e.ownerId);
           // Lifesteal on DoT damage
           if (owner && owner.role==='streamer') {
-            const s = statsFor(owner).s;
+            const { s } = statsFor(owner);
             if (s.lifestealPct>0) {
               const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
               owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
@@ -93,7 +93,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
             const id = z.id;
             setTimeout(()=>{ const zp=ctx.players.get(id); if (zp){ zp.pos=ctx.spawnZombiePos(); zp.alive=true; zp.zHp=zp.zMaxHp; } }, ctx.cfg.combat.respawnMs);
             if (owner && owner.role==='streamer') {
-              const s = statsFor(owner).s;
+              const { s } = statsFor(owner);
               if (s.reloadOnKillPct>0) ctx.refundAmmoOnKill(owner, s.reloadOnKillPct);
             }
             continue; // don't keep this effect
@@ -112,7 +112,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
           z.zHp = Math.max(0, (z.zHp ?? ctx.cfg.zombies.baseHp) - e.dps);
           const owner = ctx.players.get(e.ownerId);
           if (owner && owner.role==='streamer') {
-            const s = statsFor(owner).s;
+            const { s } = statsFor(owner);
             if (s.lifestealPct>0) {
               const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
               owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
@@ -128,7 +128,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
             const id = z.id;
             setTimeout(()=>{ const zp=ctx.players.get(id); if (zp){ zp.pos=ctx.spawnZombiePos(); zp.alive=true; zp.zHp=zp.zMaxHp; } }, ctx.cfg.combat.respawnMs);
             if (owner && owner.role==='streamer') {
-              const s = statsFor(owner).s;
+              const { s } = statsFor(owner);
               if (s.reloadOnKillPct>0) ctx.refundAmmoOnKill(owner, s.reloadOnKillPct);
             }
             continue;
@@ -150,7 +150,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
           a.hp = Math.max(0, a.hp - e.dps);
           const owner = ctx.players.get(e.ownerId);
           if (owner && owner.role==='streamer') {
-            const s = statsFor(owner).s;
+            const { s } = statsFor(owner);
             if (s.lifestealPct>0) {
               const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
               owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
@@ -162,7 +162,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
           }
           if (a.hp <= 0) {
             if (owner && owner.role==='streamer') {
-              const s = statsFor(owner).s;
+              const { s } = statsFor(owner);
               if (s.reloadOnKillPct>0) ctx.refundAmmoOnKill(owner, s.reloadOnKillPct);
             }
             continue; // killed; removal handled in updateAIZombies
@@ -181,7 +181,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
           a.hp = Math.max(0, a.hp - e.dps);
           const owner = ctx.players.get(e.ownerId);
           if (owner && owner.role==='streamer') {
-            const s = statsFor(owner).s;
+            const { s } = statsFor(owner);
             if (s.lifestealPct>0) {
               const heal = Math.max(0, Math.floor(e.dps * s.lifestealPct));
               owner.hp = Math.min(owner.maxHp ?? ctx.cfg.streamer.maxHp, (owner.hp ?? ctx.cfg.streamer.maxHp) + heal);
@@ -193,7 +193,7 @@ export function processDotEffects(ctx: RoomDO, now: number) {
           }
           if (a.hp <= 0) {
             if (owner && owner.role==='streamer') {
-              const s = statsFor(owner).s;
+              const { s } = statsFor(owner);
               if (s.reloadOnKillPct>0) ctx.refundAmmoOnKill(owner, s.reloadOnKillPct);
             }
             continue;
@@ -281,7 +281,7 @@ export function applyChainDamage(ctx: RoomDO, b: Bullet, from: {x:number;y:numbe
         }
         
         // Refund ammo if applicable
-        const s = statsFor(owner).s;
+        const { s } = statsFor(owner);
         if (s && s.reloadOnKillPct > 0) {
           ctx.refundAmmoOnKill(owner, s.reloadOnKillPct);
         }
