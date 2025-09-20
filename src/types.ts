@@ -283,6 +283,7 @@ export interface PoisonField {
   createdAt: number;
   expiresAt: number;
   ownerId: string;
+  accumulatedDamage?: number;
 }
 
 export interface RaidStats {

@@ -516,10 +516,15 @@ export function updatePoisonFields(ctx: RoomDO, now: number) {
     if (streamer) {
       const dist = Math.hypot(streamer.pos.x - field.pos.x, streamer.pos.y - field.pos.y);
       if (dist <= field.radius) {
-        const damage = Math.round(field.dps * (ctx.tickMs / 1000));
-        streamer.hp = Math.max(0, (streamer.hp ?? ctx.cfg.streamer.maxHp) - damage);
-        ctx.trackDamageTaken(streamer, damage);
-        ctx.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, true);
+        // Accumulate fractional damage to prevent rounding to 0
+        field.accumulatedDamage = (field.accumulatedDamage || 0) + (field.dps * (ctx.tickMs / 1000));
+        const damage = Math.floor(field.accumulatedDamage);
+        if (damage > 0) {
+          streamer.hp = Math.max(0, (streamer.hp ?? ctx.cfg.streamer.maxHp) - damage);
+          ctx.trackDamageTaken(streamer, damage);
+          ctx.addDamageNumber(streamer.pos.x, streamer.pos.y, damage, false, true);
+          field.accumulatedDamage -= damage;
+        }
       }
     }
   }
