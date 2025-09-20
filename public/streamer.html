@@ -121,6 +121,9 @@
     </div>
     <div class="hit-flash" id="flash"></div>
     <div class="swap-prompt" id="swapPrompt"></div>
+    <div class="countdown-overlay hidden" id="countdownOverlay">
+      <div class="countdown-text" id="countdownText"></div>
+    </div>
     
     <!-- Death Screen -->
     <div id="deathScreen" class="death-screen hidden">
@@ -660,6 +663,8 @@
       const toggleChatBtn = document.getElementById("toggleChat");
       const nerdToggleBtn = document.getElementById("nerdToggle");
       const swapPromptEl = document.getElementById("swapPrompt");
+      const countdownOverlay = document.getElementById("countdownOverlay");
+      const countdownText = document.getElementById("countdownText");
       const buffPanel = document.getElementById("buffPanel");
       const buffListEl = document.getElementById("buffList");
       const hudScoreEl = document.getElementById("hudScore");
@@ -690,6 +695,9 @@
       let roundActive = false;
       let gameStartTime = Date.now();
       let lastPlayerPos = { x: 0, y: 0 };
+      let countdownActive = false;
+      let countdownHideTimeout = null;
+      let lastCountdownDisplayed = null;
 
       // Initialize segmented health bar
       function initHealthBar(maxHp) {
@@ -847,7 +855,7 @@
       }
 
       function handleRoundRestart() {
-        roundActive = true;
+        roundActive = false;
         gameStartTime = Date.now();
         lastPlayerPos = { x: 0, y: 0 };
         prevBullets = new Map();
@@ -864,6 +872,7 @@
         choiceEls.forEach((el) => { el.textContent = ''; el.disabled = true; });
         hideDeathScreen();
         restartRaidBtn.disabled = false;
+        hideCountdownOverlay();
       }
 
       function showNextUpgrade() {
@@ -990,7 +999,8 @@
           status.textContent = "connected";
           status.dataset.state = "connected";
           document.body.classList.add("connected");
-          roundActive = true;
+          roundActive = false;
+          hideCountdownOverlay();
           gameStartTime = Date.now();
           restartRaidBtn.disabled = false;
           const name = nameStorage().get() || "Marine";
@@ -1036,6 +1046,7 @@
           }
           if (msg.type === 'round_end') {
             roundActive = false;
+            hideCountdownOverlay();
             const finalStats = msg.streamer || state.players.find((p) => p.id === playerId);
             showDeathScreen(finalStats, msg.reason || 'streamer_dead');
             status.textContent = 'connected  - raid ended';
@@ -1043,12 +1054,30 @@
           }
           if (msg.type === 'round_restart') {
             handleRoundRestart();
-            status.textContent = 'connected  - restarting raid';
-            status.dataset.state = 'connected';
+            status.textContent = 'connected  - raid starting';
+            status.dataset.state = 'starting';
+          }
+          if (msg.type === 'round_countdown') {
+            updateCountdownOverlay(Number(msg.seconds) || 0);
           }
           if (msg.type === "state") {
             stateMsgCount++;
-            roundActive = msg.roundActive !== false;
+            const nextRoundActive = msg.roundActive !== false;
+            if (!roundActive && nextRoundActive) {
+              gameStartTime = Date.now();
+              if (!countdownActive && lastCountdownDisplayed !== 0) {
+                hideCountdownOverlay();
+              }
+            }
+            if (typeof msg.countdownRemaining === 'number') {
+              const remaining = Math.max(0, Math.floor(msg.countdownRemaining));
+              if (remaining > 0) {
+                updateCountdownOverlay(remaining);
+              } else if (countdownActive || lastCountdownDisplayed !== null) {
+                updateCountdownOverlay(0);
+              }
+            }
+            roundActive = nextRoundActive;
             // detect removed bullets for small impact effect
             const curMap = new Map(msg.bullets.map((b) => [b.id, b]));
             for (const [id, prev] of prevBullets) {
@@ -1215,8 +1244,11 @@
             if (roundActive) {
               status.textContent = `connected  - ${ping} ms  - players: ${msg.players.length}`;
               status.dataset.state = "connected";
+            } else if (countdownActive || lastCountdownDisplayed !== null) {
+              status.textContent = 'connected  - raid starting';
+              status.dataset.state = "starting";
             } else {
-              status.textContent = `connected  - raid ended`;
+              status.textContent = 'connected  - raid ended';
               status.dataset.state = "ended";
             }
             state.remainingTime = msg.remainingTime;
@@ -1351,6 +1383,7 @@
       function leaveRoom(manual = true) {
         if (swapPromptEl) swapPromptEl.classList.remove('show');
         swapPromptState = null;
+        hideCountdownOverlay();
         if (inputIv) {
           clearInterval(inputIv);
           inputIv = null;
@@ -2845,7 +2878,50 @@
         setTimeout(() => flashEl.classList.remove("show"), 150);
       }
 
+      function updateCountdownOverlay(seconds) {
+        if (!countdownOverlay || !countdownText) return;
+        const normalized = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+        if (normalized === lastCountdownDisplayed && (normalized > 0 || countdownHideTimeout)) return;
+        if (countdownHideTimeout) {
+          clearTimeout(countdownHideTimeout);
+          countdownHideTimeout = null;
+        }
+        if (normalized > 0) {
+          countdownOverlay.classList.remove('hidden');
+          countdownText.textContent = String(normalized);
+          countdownActive = true;
+          lastCountdownDisplayed = normalized;
+        } else {
+          countdownOverlay.classList.remove('hidden');
+          countdownText.textContent = 'GO!';
+          countdownActive = false;
+          lastCountdownDisplayed = 0;
+          countdownHideTimeout = setTimeout(() => {
+            if (!countdownOverlay || !countdownText) return;
+            countdownOverlay.classList.add('hidden');
+            countdownText.textContent = '';
+            lastCountdownDisplayed = null;
+          }, 700);
+        }
+      }
+
+      function hideCountdownOverlay() {
+        if (!countdownOverlay || !countdownText) return;
+        if (countdownHideTimeout) {
+          clearTimeout(countdownHideTimeout);
+          countdownHideTimeout = null;
+        }
+        countdownOverlay.classList.add('hidden');
+        countdownText.textContent = '';
+        countdownActive = false;
+        lastCountdownDisplayed = null;
+      }
+
       function updateTimer(seconds) {
+        if (!roundActive) {
+          timerEl.textContent = 'Time: --';
+          return;
+        }
         const min = Math.floor(seconds / 60);
         const sec = seconds % 60;
         timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, "0")}`;

@@ -58,6 +58,9 @@ export function broadcastState(ctx: RoomDO) {
     })),
     arena: { w: ctx.W, h: ctx.H },
     remainingTime: Math.max(0, Math.floor(((ctx.roundEndTime || Date.now()) - Date.now()) / 1000)),
+    countdownRemaining: ctx.countdownActive && ctx.countdownEndsAt
+      ? Math.max(0, Math.ceil((ctx.countdownEndsAt - Date.now()) / 1000))
+      : 0,
     chatEnabled: ctx.chatEnabled,
     roundActive: ctx.roundActive,
   };

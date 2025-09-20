@@ -1468,6 +1468,49 @@ body.game {
       0 4px 8px rgba(0, 0, 0, 0.8);
   }
 }
+.countdown-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(8, 10, 14, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 45;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.countdown-overlay.hidden {
+  display: none !important;
+}
+
+.countdown-overlay:not(.hidden) {
+  opacity: 1;
+}
+
+.countdown-text {
+  font-size: 96px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #ffe48f;
+  text-shadow: 0 0 35px rgba(255, 228, 143, 0.8);
+  transform: scale(1);
+  animation: countdown-pop 0.25s ease;
+}
+
+@keyframes countdown-pop {
+  from {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .swap-prompt {
   position: absolute;
   bottom: 140px;

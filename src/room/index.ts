@@ -99,6 +99,10 @@ export class RoomDO {
   mapReady = false;
   roundEndTime: number | undefined;
   roundDurationMs = CONFIG.round.durationMs; // updated when cfg changes
+  preRoundCountdownMs = CONFIG.round.startCountdownMs;
+  countdownActive = false;
+  countdownInterval: number | undefined;
+  countdownEndsAt: number | undefined;
     // Global effects
   zombieSlowUntil: number | undefined;
   chatEnabled = true;
@@ -177,6 +181,7 @@ export class RoomDO {
     this.pickupTickMs = this.cfg.ticks.pickupMs;
     this.pickupIntervalMs = this.cfg.pickups.spawnIntervalMs;
     this.roundDurationMs = this.cfg.round.durationMs;
+    this.preRoundCountdownMs = this.cfg.round.startCountdownMs;
     this.maxAIZombies = this.cfg.aiZombies.maxCount;
     this.aiZombieSpawnCooldown = this.cfg.aiZombies.spawnCooldownMs;
     // Force map regeneration on next loop if tiles changed
@@ -185,8 +190,9 @@ export class RoomDO {
 
   startLoop() {
     this.running = true;
-    if (!this.roundEndTime) this.roundEndTime = Date.now() + this.roundDurationMs;
-    this.roundActive = true;
+    if (this.roundActive && !this.roundEndTime) {
+      this.roundEndTime = Date.now() + this.roundDurationMs;
+    }
 
     // Main game loop - 20Hz (includes state broadcast for responsiveness)
     const step = () => {
@@ -209,6 +215,49 @@ export class RoomDO {
     if (this.loopTimer) clearTimeout(this.loopTimer as unknown as number);
     if (this.pickupTimer) clearTimeout(this.pickupTimer as unknown as number);
     this.running = false;
+    this.clearCountdown();
+  }
+
+  clearCountdown() {
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval as unknown as number);
+      this.countdownInterval = undefined;
+    }
+    this.countdownActive = false;
+    this.countdownEndsAt = undefined;
+  }
+
+  beginRoundCountdown() {
+    const countdownMs = Math.max(0, this.preRoundCountdownMs);
+    if (countdownMs <= 0) {
+      this.clearCountdown();
+      this.roundActive = true;
+      this.roundEndTime = Date.now() + this.roundDurationMs;
+      this.broadcast('round_countdown', { seconds: 0 });
+      this.broadcastState();
+      return;
+    }
+
+    this.clearCountdown();
+    this.roundActive = false;
+    this.countdownActive = true;
+    this.countdownEndsAt = Date.now() + countdownMs;
+    const initialSeconds = Math.ceil(countdownMs / 1000);
+    this.broadcast('round_countdown', { seconds: initialSeconds });
+
+    this.countdownInterval = setInterval(() => {
+      if (!this.countdownEndsAt) return;
+      const remaining = Math.max(0, Math.ceil((this.countdownEndsAt - Date.now()) / 1000));
+      if (remaining > 0) {
+        this.broadcast('round_countdown', { seconds: remaining });
+        return;
+      }
+      this.clearCountdown();
+      this.roundActive = true;
+      this.roundEndTime = Date.now() + this.roundDurationMs;
+      this.broadcast('round_countdown', { seconds: 0 });
+      this.broadcastState();
+    }, 1000) as unknown as number;
   }
 
   // Separate pickup spawning logic for reduced tick rate
@@ -352,8 +401,8 @@ export class RoomDO {
       }
     }
 
-    this.roundEndTime = Date.now() + this.roundDurationMs;
-    this.roundActive = true;
+    this.roundEndTime = undefined;
+    this.roundActive = false;
 
     if (this.map) {
       const base64 = this.u8ToBase64(this.map.tiles);
@@ -364,6 +413,7 @@ export class RoomDO {
     this.broadcast('players_update', { players: [...this.players.values()].map(this.publicPlayer) });
 
     this.startLoop();
+    this.beginRoundCountdown();
   }
 
 
@@ -439,6 +489,9 @@ export class RoomDO {
             }
           } catch {}
           this.broadcast("players_update", { players: [...this.players.values()].map(this.publicPlayer) });
+          if (p.role === 'streamer' && !this.roundActive && !this.countdownActive) {
+            this.restartRound();
+          }
           break;
         }
         case "input": {
