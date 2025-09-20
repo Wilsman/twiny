@@ -315,13 +315,14 @@
       let lastHp = 100;
       let lastStateTime = performance.now();
       let lastScore = 0;
-      const effects = []; // bullet impacts etc {x,y,ttl}
+      const effects = []; // transient particles & bullet impacts
       // Screen shake accumulator (reduced each frame)
       let shake = 0;
       let muzzleFlashes = [];
       let prevShoot = false;
       let lastMuzzleAt = 0;
-      let prevBulletPos = new Map();
+      let prevBullets = new Map();
+      const bulletTrailHistory = new Map(); // bullet id -> [{x,y,t}]
       // Damage numbers for floating damage display
       let damageNumbers = [];
       // Dash trails: per-player history of recent positions while dashing
@@ -334,6 +335,306 @@
       let localMeleeDirY = 0;
       let prevMelee = false;
       let swapPromptState = null;
+
+      const updateBulletTrail = (id, x, y, now) => {
+        const existing = bulletTrailHistory.get(id) || [];
+        const filtered = existing.filter((pt) => now - pt.t < 280);
+        filtered.push({ x, y, t: now });
+        if (filtered.length > 8) filtered.shift();
+        bulletTrailHistory.set(id, filtered);
+        return filtered;
+      };
+
+      const seededRand = (seed, step = 0) => {
+        const x = Math.sin((seed + 1) * 12.9898 + step * 78.233) * 43758.5453;
+        return x - Math.floor(x);
+      };
+
+      const resolveBulletWeapon = (bullet, playerLookup) => {
+        const hint = bullet?.visual?.weapon;
+        if (hint && hint !== 'bat') return hint;
+        if (playerLookup?.has?.(bullet.ownerId)) {
+          const weapon = playerLookup.get(bullet.ownerId)?.weapon;
+          if (weapon && weapon !== 'bat') return weapon;
+        } else if (state?.players) {
+          const owner = state.players.find((p) => p.id === bullet.ownerId);
+          if (owner?.weapon && owner.weapon !== 'bat') return owner.weapon;
+        }
+        if (hint === 'bat') return 'pistol';
+        return hint || 'pistol';
+      };
+
+      const spawnBulletImpact = (bullet) => {
+        if (!bullet) return;
+        const trail = bulletTrailHistory.get(bullet.id);
+        let angle = 0;
+        if (trail && trail.length >= 2) {
+          const last = trail[trail.length - 1];
+          const prev = trail[trail.length - 2];
+          angle = Math.atan2(last.y - prev.y, last.x - prev.x) || 0;
+        }
+        bulletTrailHistory.delete(bullet.id);
+        const weapon = resolveBulletWeapon(bullet);
+        const traits = bullet.visual?.traits ? [...bullet.visual.traits] : [];
+        const normalized = weapon === 'bat' ? 'pistol' : weapon;
+        const duration = normalized === 'railgun' ? 420 : normalized === 'shotgun' ? 300 : normalized === 'flamethrower' ? 260 : 220;
+        const shakeStrength = normalized === 'railgun' ? 7 : normalized === 'shotgun' ? 4 : normalized === 'flamethrower' ? 3 : 2.2;
+        const seed = [...(bullet.id || '')].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) || Math.floor(Math.random() * 1000);
+        effects.push({
+          type: 'impact',
+          weapon: normalized,
+          traits,
+          x: bullet.x,
+          y: bullet.y,
+          angle,
+          ttl: duration,
+          duration,
+          seed,
+        });
+        shake += shakeStrength;
+      };
+
+      const drawBulletTraits = (ctx, x, y, traits, now) => {
+        if (!traits || traits.length === 0) return;
+        const traitSet = new Set(traits);
+        const pulse = 0.5 + 0.5 * Math.sin(now * 0.01 + x * 0.05 + y * 0.05);
+        ctx.save();
+        if (traitSet.has('burn')) {
+          ctx.globalAlpha = 0.4 + 0.25 * pulse;
+          ctx.strokeStyle = 'rgba(255, 138, 101, 0.85)';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(x, y, 6.5 + pulse * 2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        if (traitSet.has('slow')) {
+          ctx.globalAlpha = 0.5;
+          ctx.strokeStyle = 'rgba(129, 212, 250, 0.75)';
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.arc(x, y, 8.5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x, y - 5);
+          ctx.lineTo(x, y + 5);
+          ctx.moveTo(x - 4, y);
+          ctx.lineTo(x + 4, y);
+          ctx.stroke();
+        }
+        if (traitSet.has('bleed')) {
+          ctx.globalAlpha = 0.65;
+          ctx.fillStyle = 'rgba(244, 67, 54, 0.75)';
+          ctx.beginPath();
+          ctx.moveTo(x, y - 3);
+          ctx.quadraticCurveTo(x - 3, y + 2, x, y + 6);
+          ctx.quadraticCurveTo(x + 3, y + 2, x, y - 3);
+          ctx.fill();
+        }
+        if (traitSet.has('chain')) {
+          ctx.globalAlpha = 0.6;
+          ctx.strokeStyle = 'rgba(167, 255, 235, 0.9)';
+          ctx.lineWidth = 1;
+          const spin = (now * 0.006) % (Math.PI * 2);
+          ctx.beginPath();
+          ctx.arc(x, y, 9.5, spin, spin + Math.PI / 3);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(x, y, 9.5, spin + Math.PI, spin + Math.PI + Math.PI / 3);
+          ctx.stroke();
+        }
+        if (traitSet.has('ricochet')) {
+          ctx.globalAlpha = 0.6;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, y - 6);
+          ctx.lineTo(x + 4, y);
+          ctx.lineTo(x, y + 6);
+          ctx.lineTo(x - 4, y);
+          ctx.closePath();
+          ctx.stroke();
+        }
+        if (traitSet.has('pierce')) {
+          ctx.globalAlpha = 0.55;
+          ctx.strokeStyle = 'rgba(255, 241, 118, 0.85)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x - 6, y);
+          ctx.lineTo(x + 6, y);
+          ctx.moveTo(x, y - 6);
+          ctx.lineTo(x, y + 6);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      const drawWeaponBullet = (ctx, bullet, weapon, traits, opts) => {
+        const { angle, dist, empowered, now } = opts;
+        const x = bullet.x;
+        const y = bullet.y;
+        switch (weapon) {
+          case 'smg': {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            const tailLen = Math.min(34, Math.max(14, dist * 7 + 6));
+            const grad = ctx.createLinearGradient(0, 0, -tailLen, 0);
+            grad.addColorStop(0, 'rgba(128, 222, 234, 0.95)');
+            grad.addColorStop(0.45, 'rgba(3, 169, 244, 0.7)');
+            grad.addColorStop(1, 'rgba(3, 169, 244, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.moveTo(2.5, -1.8);
+            ctx.lineTo(-tailLen, -0.4);
+            ctx.lineTo(-tailLen, 0.4);
+            ctx.lineTo(2.5, 1.8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(3, 169, 244, 0.85)';
+            ctx.lineWidth = empowered ? 1.6 : 1.2;
+            ctx.beginPath();
+            ctx.moveTo(2.5, 0);
+            ctx.lineTo(-tailLen, 0);
+            ctx.stroke();
+            ctx.restore();
+            break;
+          }
+          case 'shotgun': {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            const burst = Math.max(9, dist * 4);
+            for (let i = 0; i < 3; i++) {
+              ctx.strokeStyle = 'rgba(255, 183, 77, 0.85)';
+              ctx.lineWidth = 1.4 - i * 0.2;
+              ctx.globalAlpha = 0.9 - i * 0.2;
+              const offset = (i - 1) * 1.1;
+              ctx.beginPath();
+              ctx.moveTo(0, offset);
+              ctx.lineTo(-burst * (1 - i * 0.25), offset);
+              ctx.stroke();
+            }
+            ctx.globalAlpha = 0.95;
+            ctx.shadowColor = 'rgba(255, 171, 64, 0.7)';
+            ctx.shadowBlur = empowered ? 26 : 16;
+            ctx.fillStyle = 'rgba(255, 138, 101, 0.9)';
+            ctx.beginPath();
+            ctx.arc(0, 0, empowered ? 4.4 : 3.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            break;
+          }
+          case 'railgun': {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            const tailLen = Math.min(150, Math.max(70, dist * 14 + 40));
+            const grad = ctx.createLinearGradient(0, 0, -tailLen, 0);
+            grad.addColorStop(0, 'rgba(187, 222, 251, 0.98)');
+            grad.addColorStop(0.4, 'rgba(100, 181, 246, 0.7)');
+            grad.addColorStop(1, 'rgba(30, 136, 229, 0)');
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = empowered ? 5 : 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-tailLen, 0);
+            ctx.stroke();
+            ctx.shadowColor = 'rgba(225, 245, 254, 0.9)';
+            ctx.shadowBlur = empowered ? 40 : 28;
+            ctx.fillStyle = '#bbdefb';
+            ctx.globalAlpha = 0.95;
+            ctx.beginPath();
+            ctx.arc(0, 0, empowered ? 6 : 5.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            break;
+          }
+          case 'flamethrower': {
+            const tailLen = Math.min(32, Math.max(10, dist * 6));
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            const trailGrad = ctx.createLinearGradient(0, 0, -tailLen, 0);
+            trailGrad.addColorStop(0, 'rgba(255, 183, 77, 0.8)');
+            trailGrad.addColorStop(1, 'rgba(255, 111, 0, 0)');
+            ctx.fillStyle = trailGrad;
+            ctx.beginPath();
+            ctx.moveTo(0, -2.4);
+            ctx.lineTo(-tailLen, -0.8);
+            ctx.lineTo(-tailLen, 0.8);
+            ctx.lineTo(0, 2.4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+            const pulse = 0.6 + 0.4 * Math.sin(now * 0.03 + x * 0.04 + y * 0.02);
+            const radius = 5.2 + pulse * 2.6;
+            const glow = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            glow.addColorStop(0, 'rgba(255, 249, 196, 0.95)');
+            glow.addColorStop(0.4, 'rgba(255, 202, 40, 0.85)');
+            glow.addColorStop(1, 'rgba(255, 87, 34, 0)');
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.45;
+            ctx.fillStyle = 'rgba(255, 183, 77, 0.55)';
+            const driftX = Math.cos(now * 0.01 + x * 0.03) * 3.5;
+            const driftY = Math.sin(now * 0.013 + y * 0.02) * 3.5;
+            ctx.beginPath();
+            ctx.arc(x - driftX, y - driftY, radius * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            break;
+          }
+          default: {
+            ctx.save();
+            ctx.translate(x, y);
+            if (dist > 0.2) {
+              ctx.rotate(angle);
+              const tailLen = Math.min(28, Math.max(10, dist * 6));
+              const grad = ctx.createLinearGradient(0, 0, -tailLen, 0);
+              grad.addColorStop(0, empowered ? 'rgba(255, 255, 224, 0.95)' : 'rgba(255, 236, 179, 0.95)');
+              grad.addColorStop(1, 'rgba(255, 193, 7, 0)');
+              ctx.fillStyle = grad;
+              ctx.beginPath();
+              ctx.moveTo(0, -2.2);
+              ctx.lineTo(-tailLen, -0.5);
+              ctx.lineTo(-tailLen, 0.5);
+              ctx.lineTo(0, 2.2);
+              ctx.closePath();
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowColor = empowered ? 'rgba(255, 255, 224, 0.9)' : 'rgba(255, 214, 123, 0.8)';
+            ctx.shadowBlur = empowered ? 24 : 12;
+            ctx.fillStyle = empowered ? '#fff8e1' : '#ffe082';
+            ctx.beginPath();
+            ctx.arc(0, 0, empowered ? 4.6 : 3.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            break;
+          }
+        }
+        drawBulletTraits(ctx, x, y, traits, now);
+      };
+
+      const renderBullet = (ctx, bullet, now, playerLookup) => {
+        const trail = updateBulletTrail(bullet.id, bullet.x, bullet.y, now);
+        const len = trail.length;
+        const prev = len >= 2 ? trail[len - 2] : null;
+        const curr = trail[len - 1];
+        const dx = prev ? curr.x - prev.x : 0;
+        const dy = prev ? curr.y - prev.y : 0;
+        const dist = Math.hypot(dx, dy);
+        const angle = prev ? Math.atan2(dy, dx) : 0;
+        const weapon = resolveBulletWeapon(bullet, playerLookup);
+        const ownerEmpowered = playerLookup?.get?.(bullet.ownerId)?.weaponed;
+        const empowered = Boolean(bullet.visual?.empowered || ownerEmpowered);
+        drawWeaponBullet(ctx, bullet, weapon, bullet.visual?.traits || [], { angle, dist, empowered, now });
+      };
 
       const link = document.getElementById("roomLink");
       const status = document.getElementById("status");
@@ -542,7 +843,8 @@
         roundActive = true;
         gameStartTime = Date.now();
         lastPlayerPos = { x: 0, y: 0 };
-        prevBulletPos = new Map();
+        prevBullets = new Map();
+        bulletTrailHistory.clear();
         effects.length = 0;
         muzzleFlashes.length = 0;
         damageNumbers = [];
@@ -741,16 +1043,13 @@
             stateMsgCount++;
             roundActive = msg.roundActive !== false;
             // detect removed bullets for small impact effect
-            const curMap = new Map(
-              msg.bullets.map((b) => [b.id, { x: b.x, y: b.y }])
-            );
-            for (const [id, pos] of prevBulletPos) {
+            const curMap = new Map(msg.bullets.map((b) => [b.id, b]));
+            for (const [id, prev] of prevBullets) {
               if (!curMap.has(id)) {
-                effects.push({ x: pos.x, y: pos.y, ttl: 220 });
-                shake += 2;
+                spawnBulletImpact(prev);
               }
             }
-            prevBulletPos = curMap;
+            prevBullets = curMap;
 
             // Process damage numbers
             if (msg.damageNumbers) {
@@ -1076,7 +1375,8 @@
         toggleChatBtn.disabled = true;
         toggleChatBtn.textContent = "Disable Chat";
         playerId = null;
-        prevBulletPos = new Map();
+        prevBullets = new Map();
+        bulletTrailHistory.clear();
         effects.length = 0;
         muzzleFlashes.length = 0;
         lastScore = 0;
@@ -1107,6 +1407,7 @@
       function draw(dt = 16) {
         const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
         const rect = c.getBoundingClientRect();
+        const frameNow = performance.now();
         // Reset and clear in device pixels
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, c.width, c.height);
@@ -1440,15 +1741,12 @@
           ctx.lineWidth = 1;
         }
         // Bullets
-        ctx.fillStyle = "#ffd54f";
-        for (const b of state.bullets) {
-          ctx.save();
-          ctx.shadowColor = "rgba(255,213,79,.6)";
-          ctx.shadowBlur = 10;
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
+        if (state.bullets && state.bullets.length) {
+          const bulletNow = frameNow;
+          const playerLookup = new Map(state.players.map((p) => [p.id, p]));
+          for (const b of state.bullets) {
+            renderBullet(ctx, b, bulletNow, playerLookup);
+          }
         }
         // Spitter globs (enemy projectiles)
         if (state.globs) {
@@ -1464,6 +1762,7 @@
           }
         }
         // Bullet impact effects
+        const effectNow = frameNow;
         for (let i = effects.length - 1; i >= 0; i--) {
           const e = effects[i];
           e.ttl -= dt;
@@ -1471,12 +1770,126 @@
             effects.splice(i, 1);
             continue;
           }
+          const total = e.duration || 220;
+          const life = Math.max(0, Math.min(1, e.ttl / total));
+          const progress = 1 - life;
           ctx.save();
-          ctx.globalAlpha = e.ttl / 220;
-          ctx.fillStyle = "#ff6b35";
-          ctx.beginPath();
-          ctx.arc(e.x, e.y, 3, 0, Math.PI * 2);
-          ctx.fill();
+          if (e.type === 'impact') {
+            switch (e.weapon) {
+              case 'railgun': {
+                const angle = e.angle || 0;
+                const len = 170 + 120 * progress;
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.45 * life + 0.2;
+                ctx.strokeStyle = 'rgba(144, 202, 249, 0.95)';
+                ctx.lineWidth = 4 + 4 * life;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(e.x - Math.cos(angle) * len, e.y - Math.sin(angle) * len);
+                ctx.lineTo(e.x + Math.cos(angle) * 18, e.y + Math.sin(angle) * 18);
+                ctx.stroke();
+                ctx.globalAlpha = 0.25 * life;
+                ctx.fillStyle = 'rgba(187, 222, 251, 0.35)';
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, 18 + 42 * progress, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 0.5 * life;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+                ctx.lineWidth = 1.4;
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, 26 + 48 * progress, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+              }
+              case 'shotgun': {
+                const sparks = 5;
+                for (let s = 0; s < sparks; s++) {
+                  const ang = seededRand(e.seed || 1, s) * Math.PI * 2;
+                  const length = 12 + seededRand(e.seed || 1, s + 5) * 28;
+                  ctx.globalAlpha = (0.75 - s * 0.12) * life;
+                  ctx.strokeStyle = 'rgba(255, 183, 77, 0.9)';
+                  ctx.lineWidth = 1.3 - s * 0.15;
+                  ctx.beginPath();
+                  ctx.moveTo(e.x, e.y);
+                  ctx.lineTo(
+                    e.x + Math.cos(ang) * length * life,
+                    e.y + Math.sin(ang) * length * life
+                  );
+                  ctx.stroke();
+                }
+                ctx.globalAlpha = 0.4 * life;
+                ctx.fillStyle = 'rgba(255, 138, 101, 0.6)';
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, 5 + 10 * progress, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+              }
+              case 'smg': {
+                const angle = e.angle || 0;
+                const len = 28 + 36 * progress;
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.55 * life;
+                ctx.strokeStyle = 'rgba(3, 169, 244, 0.8)';
+                ctx.lineWidth = 1.2 + 1.5 * life;
+                ctx.beginPath();
+                ctx.moveTo(e.x - Math.cos(angle) * len, e.y - Math.sin(angle) * len);
+                ctx.lineTo(e.x + Math.cos(angle) * 8, e.y + Math.sin(angle) * 8);
+                ctx.stroke();
+                ctx.globalAlpha = 0.35 * life;
+                ctx.beginPath();
+                ctx.moveTo(e.x - Math.cos(angle + Math.PI / 2) * 6, e.y - Math.sin(angle + Math.PI / 2) * 6);
+                ctx.lineTo(e.x + Math.cos(angle + Math.PI / 2) * 6, e.y + Math.sin(angle + Math.PI / 2) * 6);
+                ctx.stroke();
+                break;
+              }
+              case 'flamethrower': {
+                const angle = e.angle || 0;
+                const radius = 9 + 18 * progress;
+                ctx.globalAlpha = 0.55 * life;
+                ctx.fillStyle = 'rgba(255, 138, 101, 0.65)';
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 0.4 * life;
+                ctx.fillStyle = 'rgba(255, 202, 40, 0.45)';
+                ctx.beginPath();
+                ctx.arc(
+                  e.x - Math.cos(angle) * (6 + 14 * progress),
+                  e.y - Math.sin(angle) * (6 + 14 * progress),
+                  radius * 0.6,
+                  0,
+                  Math.PI * 2
+                );
+                ctx.fill();
+                break;
+              }
+              default: {
+                const radius = 5 + 12 * progress;
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.5 * life + 0.2;
+                ctx.fillStyle = 'rgba(255, 214, 126, 0.6)';
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 0.35 * life;
+                ctx.strokeStyle = 'rgba(255, 241, 148, 0.8)';
+                ctx.lineWidth = 1.5 + 2.5 * life;
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, radius + 4, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+              }
+            }
+            if (e.traits && e.traits.length) {
+              drawBulletTraits(ctx, e.x, e.y, e.traits, effectNow);
+            }
+          } else {
+            ctx.globalAlpha = life;
+            ctx.fillStyle = 'rgba(255, 107, 53, 0.7)';
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, 4 + 10 * progress, 0, Math.PI * 2);
+            ctx.fill();
+          }
           ctx.restore();
         }
 

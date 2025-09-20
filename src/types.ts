@@ -21,6 +21,28 @@ export type WeaponProcId =
   | 'volatile_core'
   | 'siphon_bloom';
 
+export type WeaponId =
+  | 'pistol'
+  | 'smg'
+  | 'shotgun'
+  | 'railgun'
+  | 'flamethrower'
+  | 'bat';
+
+export type BulletTrait =
+  | 'burn'
+  | 'slow'
+  | 'bleed'
+  | 'chain'
+  | 'ricochet'
+  | 'pierce';
+
+export interface BulletVisualHint {
+  weapon?: WeaponId;
+  empowered?: boolean;
+  traits?: BulletTrait[];
+}
+
 export interface WeaponProcGrant {
   id: WeaponProcId;
   flatChance?: number;
@@ -123,6 +145,7 @@ export interface BulletSpawnSpec {
   vel: {x:number;y:number};
   ttl: number;
   ownerId: string;
+  visual?: BulletVisualHint;
   meta: {
     damage: number;
     radius: number;         // collision radius for this bullet
