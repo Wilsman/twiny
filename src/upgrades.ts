@@ -181,6 +181,15 @@ export const MODS: ModDef[] = [
     },
   },
   {
+    id: "crit_dmg",
+    name: "Critical Damage",
+    rarity: "rare",
+    desc: "+50% crit damage.",
+    apply: (s, k) => {
+      s.critMul = Math.max(s.critMul, 1.5 + 0.5 * k);
+    },
+  },
+  {
     id: "status_burn",
     name: "Incendiary",
     rarity: "rare",
@@ -307,19 +316,19 @@ export const MODS: ModDef[] = [
     },
   },
   {
-    id: "smg_stability",
-    name: "SMG Stability",
+    id: "weapon_stability",
+    name: "Weapon Stability",
     rarity: "common",
-    desc: "SMG spread −20%.",
+    desc: "Weapon spread −20%.",
     apply: (s, k) => {
       s.spreadMul *= Math.pow(0.8, k);
     },
   },
   {
-    id: "pistol_precision",
-    name: "Pistol Precision",
+    id: "weapon_precision",
+    name: "Weapon Precision",
     rarity: "common",
-    desc: "Pistol crit chance +15%.",
+    desc: "Weapon crit chance +15%.",
     apply: (s, k) => {
       s.critChance += 0.15 * k;
     },
