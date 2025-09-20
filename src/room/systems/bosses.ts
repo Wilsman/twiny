@@ -68,6 +68,14 @@ export function updateBoss(ctx: RoomDO, boss: Boss, now: number) {
     boss.state = "idle";
     return;
   }
+  
+  // End charge ability if duration has passed
+  if (boss.state === "ability" && boss.type === "bruteKing" && boss.chargeUntil && now >= boss.chargeUntil) {
+    boss.state = "chasing";
+    boss.chargeUntil = undefined;
+    boss.vel.x = 0;
+    boss.vel.y = 0;
+  }
 
   const dist = Math.hypot(boss.pos.x - streamer.pos.x, boss.pos.y - streamer.pos.y);
   
@@ -110,7 +118,25 @@ export function updateBoss(ctx: RoomDO, boss: Boss, now: number) {
   }
 
   // Movement AI - improved movement logic
-  if ((boss.state === "chasing" || boss.state === "attacking") && streamer) {
+  if (boss.state === "ability" && boss.type === "bruteKing" && boss.chargeUntil && now < boss.chargeUntil) {
+    // Handle charge movement
+    const config = ctx.cfg.bosses.types.bruteKing.abilities.charge;
+    let chargeSpeed = config.speed;
+    if (boss.enraged) {
+      chargeSpeed *= ctx.cfg.bosses.types.bruteKing.abilities.enrage.speedMul;
+    }
+    
+    // Ensure charge direction is set, otherwise default to current velocity or stop
+    if (boss.chargeDirX !== undefined && boss.chargeDirY !== undefined) {
+      boss.vel.x = boss.chargeDirX * chargeSpeed;
+      boss.vel.y = boss.chargeDirY * chargeSpeed;
+    } else {
+      // If charge direction isn't set, revert to chasing state
+      boss.state = "chasing";
+      boss.chargeUntil = undefined;
+    }
+  } else if ((boss.state === "chasing" || boss.state === "attacking") && streamer) {
+    // Normal chasing/attacking movement
     const dx = streamer.pos.x - boss.pos.x;
     const dy = streamer.pos.y - boss.pos.y;
     const len = Math.hypot(dx, dy) || 1;
