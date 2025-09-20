@@ -299,6 +299,13 @@
         document.addEventListener('mozfullscreenchange', handleHudFullscreenChange);
         document.addEventListener('MSFullscreenChange', handleHudFullscreenChange);
         
+        // Auto-start the game if we have a room ID in the URL
+        document.addEventListener('DOMContentLoaded', () => {
+          if (presetRoom) {
+            boot();
+          }
+        });
+        
         // Also update when canvas size changes
         const resizeObserver = new ResizeObserver(updateHudPosition);
         resizeObserver.observe(c);

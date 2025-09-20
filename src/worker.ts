@@ -37,8 +37,8 @@ export default {
       return stub.fetch(req);
     }
 
-    // Mint a new room id with regional hint
-    if (url.pathname === "/create" && req.method === "POST") {
+    // Helper function to create a new room
+    const createNewRoom = async (req: Request) => {
       let overrides: any = undefined;
       try {
         const ct = req.headers.get('content-type') || '';
@@ -63,7 +63,19 @@ export default {
           }));
         } catch {}
       }
+      return roomId;
+    };
+
+    // Mint a new room id with regional hint (API endpoint)
+    if (url.pathname === "/create" && req.method === "POST") {
+      const roomId = await createNewRoom(req);
       return new Response(JSON.stringify({ roomId }), { headers: { "content-type": "application/json" } });
+    }
+
+    // Streamer page - create a new room and redirect to it
+    if (url.pathname === "/streamer") {
+      const roomId = await createNewRoom(req);
+      return Response.redirect(`${url.protocol}//${url.host}/streamer.html?room=${roomId}`, 302);
     }
 
     // Simple health
