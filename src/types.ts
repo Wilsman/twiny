@@ -5,7 +5,7 @@ export type ModId =
   | 'spread_down' | 'reload_on_kill' | 'lifesteal'
   | 'knockback_up' | 'crit_chance' | 'crit_dmg' | 'status_burn'
   | 'status_slow' | 'status_bleed'
-  | 'shotgun_extra_pellet' | 'weapon_stability' | 'weapon_precision'
+  | 'extra_bullet' | 'weapon_stability' | 'weapon_precision'
   | 'dash_reload' | 'on_hit_explode' | 'chain_lightning'
   | 'magnet_radius' | 'on_extract_refund' | 'ammo_efficiency'
   | 'movement_speed' | 'dash_distance' | 'double_jump' | 'ghost_walk'

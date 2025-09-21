@@ -1,4 +1,4 @@
-import {
+﻿import {
   ModDef,
   ModHooks,
   ModId,
@@ -6,6 +6,7 @@ import {
   StatBlock,
   WeaponProcInstance,
   WeaponProcId,
+  BulletSpawnSpec,
 } from "./types";
 
 // XP pacing
@@ -112,6 +113,24 @@ export function statusFrom(s: StatBlock) {
     st.bleedChance = s.bleedChance;
   }
   return Object.keys(st).length ? st : undefined;
+}
+function cloneBulletSpec(spec: BulletSpawnSpec): BulletSpawnSpec {
+  return {
+    pos: { ...spec.pos },
+    vel: { ...spec.vel },
+    ttl: spec.ttl,
+    ownerId: spec.ownerId,
+    visual: spec.visual
+      ? {
+          ...spec.visual,
+          traits: spec.visual.traits ? [...spec.visual.traits] : undefined,
+        }
+      : undefined,
+    meta: {
+      ...spec.meta,
+      status: spec.meta.status ? { ...spec.meta.status } : undefined,
+    },
+  };
 }
 
 // Upgrade catalog
@@ -305,13 +324,47 @@ export const MODS: ModDef[] = [
     ],
   },
   {
-    id: "shotgun_extra_pellet",
-    name: "+Pellets",
+    id: "extra_bullet",
+    name: "Double Tap",
     rarity: "uncommon",
-    desc: "+1 shotgun pellet.",
+    desc: "Each shot fires one extra projectile per stack without consuming ammo.",
     hooks: {
-      onShoot: ({ bullets }) => {
-        /* can be implemented to add an extra pellet where appropriate */
+      onShoot: ({ room, playerId, bullets }) => {
+        if (!bullets?.length) return;
+        const player = room?.players?.get?.(playerId);
+        if (!player) return;
+        const stacks = Number(player.mods?.["extra_bullet"] ?? 0);
+        if (stacks <= 0) return;
+        const weapon = player.weapon || "pistol";
+        const spreadMap: Record<string, number> = {
+          pistol: 0.18,
+          smg: 0.2,
+          shotgun: 0.45,
+          railgun: 0.08,
+          flamethrower: 0.3,
+        };
+        const spread = spreadMap[weapon] ?? 0.18;
+        const originals = bullets.slice();
+        const extras: BulletSpawnSpec[] = [];
+        for (let i = 0; i < stacks; i++) {
+          const source = originals[i % originals.length];
+          if (!source) break;
+          const extra = cloneBulletSpec(source);
+          if (spread > 0) {
+            const tier = Math.floor(i / 2) + 1;
+            const dir = i % 2 === 0 ? 1 : -1;
+            const angle = dir * (spread * tier) / (stacks + 1);
+            const { x: vx, y: vy } = extra.vel;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            extra.vel = {
+              x: vx * cos - vy * sin,
+              y: vx * sin + vy * cos,
+            };
+          }
+          extras.push(extra);
+        }
+        bullets.push(...extras);
       },
     },
   },
@@ -473,25 +526,33 @@ export function rollChoices(
     epic: 1.8,
     legendary: 0.2,
   };
-  const pool = MODS.map((m) => ({ m, w: weights[m.rarity] }));
+  const pool = MODS
+    .filter((mod) => {
+      const stacks = current?.[mod.id] ?? 0;
+      if (mod.maxStacks !== undefined && stacks >= mod.maxStacks) return false;
+      return true;
+    })
+    .map((mod) => ({ mod, weight: weights[mod.rarity] ?? 0 }));
+
   const picks: ModDef[] = [];
-  for (let i = 0; i < 3; i++) {
-    let total = pool.reduce((s, p) => s + p.w, 0);
-    let r = rng() * total;
-    let chosen: ModDef | null = null;
-    for (const p of pool) {
-      r -= p.w;
-      if (r <= 0) {
-        chosen = p.m;
+  const working = pool.filter((entry) => entry.weight > 0);
+  for (let i = 0; i < 3 && working.length > 0; i++) {
+    const total = working.reduce((sum, entry) => sum + entry.weight, 0);
+    if (total <= 0) break;
+    let roll = rng() * total;
+    let chosenIndex = working.length - 1;
+    for (let idx = 0; idx < working.length; idx++) {
+      roll -= working[idx].weight;
+      if (roll <= 0) {
+        chosenIndex = idx;
         break;
       }
     }
-    if (!chosen) chosen = pool[pool.length - 1].m;
-    if (picks.some((x) => x.id === chosen!.id)) {
-      i--;
-      continue;
-    }
-    picks.push(chosen);
+    const [picked] = working.splice(chosenIndex, 1);
+    picks.push(picked.mod);
   }
+
   return picks;
 }
+
+
