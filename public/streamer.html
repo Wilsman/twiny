@@ -690,6 +690,25 @@
       let countdownHideTimeout = null;
       let lastCountdownDisplayed = null;
 
+      const backgroundMusic = new Audio('/Digital Frenzy.mp3');
+      backgroundMusic.loop = true;
+      backgroundMusic.volume = 0.01;
+
+      function playBackgroundMusic() {
+        if (backgroundMusic.paused) {
+          const playPromise = backgroundMusic.play();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+          }
+        }
+      }
+
+      function pauseBackgroundMusic() {
+        if (!backgroundMusic.paused) {
+          backgroundMusic.pause();
+        }
+      }
+
       // Initialize segmented health bar
       function initHealthBar(maxHp) {
         maxHealthSegments = Math.max(5, Math.min(20, Math.ceil(maxHp / 10))); // 5-20 segments
@@ -755,6 +774,7 @@
       function showDeathScreen(playerStats, reason = 'streamer_dead') {
         isPlayerDead = true;
         roundActive = false;
+        pauseBackgroundMusic();
 
         // Calculate time survived
         const timeAlive = Date.now() - gameStartTime;
@@ -1055,9 +1075,13 @@
             const nextRoundActive = msg.roundActive !== false;
             if (!roundActive && nextRoundActive) {
               gameStartTime = Date.now();
+              playBackgroundMusic();
               if (!countdownActive && lastCountdownDisplayed !== 0) {
                 hideCountdownOverlay();
               }
+            }
+            if (roundActive && !nextRoundActive) {
+              pauseBackgroundMusic();
             }
             if (typeof msg.countdownRemaining === 'number') {
               const remaining = Math.max(0, Math.floor(msg.countdownRemaining));

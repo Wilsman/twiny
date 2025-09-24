@@ -66,6 +66,25 @@
     const params = new URLSearchParams(location.search);
     let roomId = params.get('room') || '';
 
+    const backgroundMusic = new Audio('/Digital Frenzy.mp3');
+    backgroundMusic.loop = true;
+    backgroundMusic.volume = 0.01;
+
+    function playBackgroundMusic() {
+      if (backgroundMusic.paused) {
+        const playPromise = backgroundMusic.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {});
+        }
+      }
+    }
+
+    function pauseBackgroundMusic() {
+      if (!backgroundMusic.paused) {
+        backgroundMusic.pause();
+      }
+    }
+
     const { c, ctx } = minimalCanvas(1440, 810);
     suppressPageHotkeys();
     let ws, playerId, arena={w:960,h:540};
@@ -582,6 +601,7 @@
           status.textContent = 'connected • raid ended';
           status.dataset.state = 'ended';
           showRaidEndOverlay(msg);
+          pauseBackgroundMusic();
         }
         if (msg.type === 'round_restart') {
           roundActive = true;
@@ -597,6 +617,7 @@
         if (msg.type === 'state') {
           stateMsgCount++;
           roundActive = msg.roundActive !== false;
+          if (roundActive) playBackgroundMusic();
           // impact effects
           const curMap = new Map(msg.bullets.map(b=>[b.id,b]));
           for (const [id, prev] of prevBullets) {
