@@ -61,7 +61,6 @@ export function broadcastState(ctx: RoomDO) {
     countdownRemaining: ctx.countdownActive && ctx.countdownEndsAt
       ? Math.max(0, Math.ceil((ctx.countdownEndsAt - Date.now()) / 1000))
       : 0,
-    chatEnabled: ctx.chatEnabled,
     roundActive: ctx.roundActive,
   };
   const msg = JSON.stringify(snapshot);

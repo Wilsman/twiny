@@ -202,7 +202,6 @@ export class RoomDO {
   countdownEndsAt: number | undefined;
   // Global effects
   zombieSlowUntil: number | undefined;
-  chatEnabled = true;
   // Extraction rotation pacing from config
 
   // Metadata
@@ -750,32 +749,9 @@ export class RoomDO {
           } catch {}
           break;
         }
-        case "toggle_chat": {
-          const p = this.players.get(pid);
-          if (!p || p.role !== "streamer") return;
-          // allow explicit boolean or toggle if omitted
-          const desired =
-            typeof msg.disabled === "boolean"
-              ? !msg.disabled
-              : !this.chatEnabled;
-          this.chatEnabled = desired;
-          this.broadcast("notice", {
-            message: this.chatEnabled
-              ? "Chat enabled by streamer"
-              : "Chat disabled by streamer",
-          });
-          break;
-        }
         case "pong": {
           const p = this.players.get(pid);
           if (p) p.lastSeen = Date.now();
-          break;
-        }
-        case "chat": {
-          const p = this.players.get(pid);
-          if (!p) return;
-          if (!this.chatEnabled && p.role !== "streamer") return;
-          this.broadcast("chat", { from: p.name, message: msg.message });
           break;
         }
         case "buy": {

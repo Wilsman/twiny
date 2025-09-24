@@ -53,25 +53,6 @@
         <div class="card-title">Players</div>
         <div class="pill-list" id="players"></div>
       </div>
-
-      <div class="card">
-        <div class="card-title">Chat</div>
-        <div id="chatMessages" class="chat-messages"></div>
-        <div class="row"><input id="chatInput" placeholder="Chat..." /></div>
-      </div>
-    </aside>
-  </div>
-
-  <div id="raidEndOverlay" class="raid-end-overlay hidden">
-    <div class="raid-end-card">
-      <div class="raid-end-title">Streamer Down!</div>
-      <p class="raid-end-description" id="raidEndDescription">
-        The streamer has been defeated. Waiting for the next raid...
-      </p>
-      <div class="raid-end-leaderboard" id="raidEndLeaderboardWrapper">
-        <div class="raid-end-label">Top zombies this round</div>
-        <ol id="raidEndLeaderboard"></ol>
-      </div>
       <div class="raid-end-actions">
         <button id="raidEndStay">Stay for restart</button>
         <button id="raidEndLeave" class="raid-end-leave">Return to menu</button>
@@ -132,8 +113,6 @@
     const shuffleBtn = document.getElementById('shuffle');
     const timerEl = document.getElementById('timer');
     const emoteBar = document.getElementById('emoteBar');
-    const chatInput = document.getElementById('chatInput');
-    const chatMessagesEl = document.getElementById('chatMessages');
     const nerdToggleBtn = document.getElementById('nerdToggle');
     const raidEndOverlay = document.getElementById('raidEndOverlay');
     const raidEndDescription = document.getElementById('raidEndDescription');
@@ -465,25 +444,6 @@
 
     document.getElementById('shuffle').onclick = (ev) => { nameEl.value = randomName(); if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur(); };
 
-    function sendChat(msg) {
-      if (ws && ws.readyState===1) ws.send(JSON.stringify({ type:'chat', message: msg }));
-    }
-
-    chatInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && chatInput.value.trim()) {
-        sendChat(chatInput.value.trim());
-        chatInput.value = '';
-      }
-    });
-
-    function appendChat(from, message) {
-      chatMessagesEl.innerHTML += `<div>${from}: ${message}</div>`;
-      while (chatMessagesEl.children.length > 10) {
-        chatMessagesEl.removeChild(chatMessagesEl.firstChild);
-      }
-      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-    }
-
     let sendNeutralHandler = null; let visHandler = null; let inputIv = null;
     let pingIv = null; let latency = null; let stateMsgCount = 0; let statesPerSec = 0; let lastStateRateAt = performance.now();
     function leave(){
@@ -621,7 +581,6 @@
           roundActive = false;
           status.textContent = 'connected • raid ended';
           status.dataset.state = 'ended';
-          appendChat('System', 'Raid ended');
           showRaidEndOverlay(msg);
         }
         if (msg.type === 'round_restart') {
@@ -677,22 +636,12 @@
           state.remainingTime = msg.remainingTime;
           updateTimer(state.remainingTime);
           updatePlayerList(msg.players);
-          // Respect chat enabled/disabled from server
-          if (typeof msg.chatEnabled === 'boolean') {
-            chatInput.disabled = !msg.chatEnabled;
-            chatInput.placeholder = msg.chatEnabled ? 'Chat...' : 'Chat disabled by streamer';
-            const chatCard = chatMessagesEl.closest('.card');
-          if (chatCard) chatCard.classList.toggle('hidden', !msg.chatEnabled);
-          }
         }
         if (msg.type === 'pong') {
           if (latency) latency.handlePong(Number(msg.timestamp)||0);
         }
-        if (msg.type === 'chat') {
-          appendChat(msg.from, msg.message);
-        }
         if (msg.type === 'notice') {
-          appendChat('System', msg.message);
+          console.log('[notice]', msg.message);
         }
       });
       // Send continuous movement state for smooth input like streamer

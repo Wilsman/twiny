@@ -72,7 +72,6 @@
           <div class="card-title">Session</div>
           <div class="row">
             <button id="newRoom">Create Room</button>
-            <button id="toggleChat" disabled>Disable Chat</button>
           </div>
           <div class="row">
             <input
@@ -112,11 +111,6 @@
           <div class="pill-list" id="players"></div>
         </div>
 
-        <div class="card">
-          <div class="card-title">Chat</div>
-          <div id="chatMessages" class="chat-messages"></div>
-          <div class="row"><input id="chatInput" placeholder="Chat..." /></div>
-        </div>
       </aside>
     </div>
     <div class="hit-flash" id="flash"></div>
@@ -658,9 +652,6 @@
       const newBtn = document.getElementById("newRoom");
       const copyBtn = document.getElementById("copy");
       const timerEl = document.getElementById("timer");
-      const chatMessagesEl = document.getElementById("chatMessages");
-      const chatInput = document.getElementById("chatInput");
-      const toggleChatBtn = document.getElementById("toggleChat");
       const nerdToggleBtn = document.getElementById("nerdToggle");
       const swapPromptEl = document.getElementById("swapPrompt");
       const countdownOverlay = document.getElementById("countdownOverlay");
@@ -1008,7 +999,6 @@
             JSON.stringify({ type: "join_room", role: "streamer", name })
           );
           newBtn.textContent = "End Session";
-          toggleChatBtn.disabled = false;
         });
         latency = createLatencyMonitor(ws);
         if (pingIv) {
@@ -1254,20 +1244,6 @@
             state.remainingTime = msg.remainingTime;
             updateTimer(state.remainingTime);
             updatePlayerList(msg.players);
-            // Update chat toggle button label from state
-            if (typeof msg.chatEnabled === "boolean") {
-              toggleChatBtn.textContent = msg.chatEnabled
-                ? "Disable Chat"
-                : "Enable Chat";
-              // Hide chat card and disable input when chat is disabled
-              chatInput.disabled = !msg.chatEnabled;
-              chatInput.placeholder = msg.chatEnabled
-                ? "Chat..."
-                : "Chat disabled by streamer";
-              const chatCard = chatMessagesEl.closest(".card");
-              if (chatCard)
-                chatCard.classList.toggle("hidden", !msg.chatEnabled);
-            }
             if (me && (me.hp ?? 0) < lastHp) {
               flash();
             }
@@ -1289,14 +1265,10 @@
           if (msg.type === "pong") {
             if (latency) latency.handlePong(Number(msg.timestamp) || 0);
           }
-          if (msg.type === "chat") {
-            appendChat(msg.from, msg.message);
-          }
           if (msg.type === "notice") {
             try {
               toast(msg.message);
             } catch {}
-            appendChat("System", msg.message);
             
             // Check for respawn notice (pit death)
           }
@@ -1412,8 +1384,6 @@
         newBtn.textContent = "Create Room";
         copyBtn.disabled = true;
         link.value = "";
-        toggleChatBtn.disabled = true;
-        toggleChatBtn.textContent = "Disable Chat";
         playerId = null;
         prevBullets = new Map();
         bulletTrailHistory.clear();
@@ -2927,18 +2897,6 @@
         timerEl.textContent = `Time: ${min}:${sec.toString().padStart(2, "0")}`;
       }
 
-      function appendChat(from, message) {
-        chatMessagesEl.innerHTML += `<div>${from}: ${message}</div>`;
-        while (chatMessagesEl.children.length > 10) {
-          chatMessagesEl.removeChild(chatMessagesEl.firstChild);
-        }
-      }
-
-      function sendChat(msg) {
-        if (ws && ws.readyState === 1)
-          ws.send(JSON.stringify({ type: "chat", message: msg }));
-      }
-
       // Animation loop for effects and smoother visuals
       let last = performance.now();
       const fpsSamples = [];
@@ -3032,21 +2990,6 @@
           setTimeout(() => (copyBtn.textContent = "Copy Link"), 800);
         }
       };
-      toggleChatBtn.onclick = (ev) => {
-        if (ev && ev.currentTarget && ev.currentTarget.blur)
-          ev.currentTarget.blur();
-        if (!ws || ws.readyState !== 1) return;
-        // Flip desired state based on button label
-        const enable = toggleChatBtn.textContent.includes("Enable");
-        ws.send(JSON.stringify({ type: "toggle_chat", disabled: !enable }));
-      };
-
-      chatInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && chatInput.value.trim()) {
-          sendChat(chatInput.value.trim());
-          chatInput.value = "";
-        }
-      });
 
       // Death screen button event listeners
       if (restartRaidBtn) {
