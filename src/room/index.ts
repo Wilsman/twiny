@@ -28,6 +28,7 @@ import type {
   Boss,
   BossMinion,
   PoisonField,
+  ElementalTrailSegment,
   BossType,
   ModId,
 } from "../types";
@@ -121,6 +122,7 @@ import {
   sanitizeName as sanitizeNameImpl,
   randomName as randomNameImpl,
 } from "./utils/names";
+import { updateElementalTrails as updateElementalTrailsImpl } from "./systems/elemental-trails";
 
 export class RoomDO {
   state: DurableObjectState;
@@ -156,6 +158,7 @@ export class RoomDO {
   bosses: Boss[] = [];
   bossMinions: BossMinion[] = [];
   poisonFields: PoisonField[] = [];
+  elementalTrails: ElementalTrailSegment[] = [];
   lastBossSpawn = 0;
   nextBossAnnouncement?: number;
   bossSpawnCooldown = CONFIG.bosses.spawnIntervalMs;
@@ -450,6 +453,7 @@ export class RoomDO {
     this.bosses = [];
     this.bossMinions = [];
     this.poisonFields = [];
+    this.elementalTrails = [];
     this.damageNumbers = [];
     this.extractions = [];
     this.midSafeZones = [];
@@ -1509,6 +1513,18 @@ export class RoomDO {
 
   updatePoisonFields(now: number) {
     return updatePoisonFieldsImpl(this, now);
+  }
+
+  updateElementalTrails(now: number) {
+    return updateElementalTrailsImpl(this, now);
+  }
+
+  spawnElementalTrail(segment: ElementalTrailSegment) {
+    this.elementalTrails.push(segment);
+    const maxSegments = 256;
+    if (this.elementalTrails.length > maxSegments) {
+      this.elementalTrails.splice(0, this.elementalTrails.length - maxSegments);
+    }
   }
 
   onBossDeath(boss: Boss) {

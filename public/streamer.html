@@ -2217,7 +2217,7 @@
         if (state.poisonFields) {
           for (const field of state.poisonFields) {
             ctx.save();
-            
+
             // Poison field effect - pulsing green circle
             const time = Date.now() / 1000;
             const pulse = 0.7 + 0.3 * Math.sin(time * 3);
@@ -2238,7 +2238,67 @@
             ctx.setLineDash([5, 5]);
             ctx.stroke();
             ctx.setLineDash([]);
-            
+
+            ctx.restore();
+          }
+        }
+
+        if (state.elementalTrails) {
+          const nowMs = Date.now();
+          const palettes = {
+            ignite: {
+              inner: 'rgba(255, 183, 77, 0.65)',
+              outer: 'rgba(255, 61, 0, 0.0)',
+              ring: 'rgba(255, 204, 128, 0.95)',
+              glow: 'rgba(255, 111, 0, 0.6)',
+            },
+            poison: {
+              inner: 'rgba(165, 214, 167, 0.6)',
+              outer: 'rgba(46, 125, 50, 0.0)',
+              ring: 'rgba(129, 199, 132, 0.9)',
+              glow: 'rgba(102, 187, 106, 0.55)',
+            },
+            shock: {
+              inner: 'rgba(144, 202, 249, 0.6)',
+              outer: 'rgba(30, 136, 229, 0.0)',
+              ring: 'rgba(100, 181, 246, 0.9)',
+              glow: 'rgba(3, 169, 244, 0.55)',
+            },
+          };
+
+          for (const seg of state.elementalTrails) {
+            const palette = palettes[seg.effect] || palettes.ignite;
+            const createdAt = seg.createdAt || nowMs;
+            const expiresAt = seg.expiresAt || nowMs;
+            const total = Math.max(1, expiresAt - createdAt);
+            const elapsed = Math.min(total, Math.max(0, nowMs - createdAt));
+            const progress = Math.min(1, elapsed / total);
+            const fade = Math.max(0.1, 1 - progress);
+            const pulse = 0.6 + 0.4 * Math.sin(progress * Math.PI * 4);
+            const baseRadius = seg.radius || 24;
+            const renderRadius = baseRadius + pulse * 6;
+
+            ctx.save();
+            const gradient = ctx.createRadialGradient(seg.pos.x, seg.pos.y, baseRadius * 0.3, seg.pos.x, seg.pos.y, renderRadius);
+            gradient.addColorStop(0, palette.inner);
+            gradient.addColorStop(1, palette.outer);
+            ctx.globalAlpha = 0.55 * fade;
+            ctx.fillStyle = gradient;
+            ctx.shadowColor = palette.glow;
+            ctx.shadowBlur = 18 * fade;
+            ctx.beginPath();
+            ctx.arc(seg.pos.x, seg.pos.y, renderRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 0.9 * fade;
+            ctx.strokeStyle = palette.ring;
+            ctx.lineWidth = 2 + ((seg.stacks || 1) * 0.6);
+            ctx.setLineDash([6, 10]);
+            ctx.beginPath();
+            ctx.arc(seg.pos.x, seg.pos.y, baseRadius + 2, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
             ctx.restore();
           }
         }

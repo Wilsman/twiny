@@ -56,6 +56,17 @@ export function broadcastState(ctx: RoomDO) {
       dps: field.dps,
       expiresAt: field.expiresAt
     })),
+    elementalTrails: ctx.elementalTrails.map(seg => ({
+      id: seg.id,
+      ownerId: seg.ownerId,
+      pos: seg.pos,
+      radius: seg.radius,
+      effect: seg.effect,
+      createdAt: seg.createdAt,
+      expiresAt: seg.expiresAt,
+      stacks: seg.stacks,
+      potency: seg.potency,
+    })),
     arena: { w: ctx.W, h: ctx.H },
     remainingTime: Math.max(0, Math.floor(((ctx.roundEndTime || Date.now()) - Date.now()) / 1000)),
     countdownRemaining: ctx.countdownActive && ctx.countdownEndsAt

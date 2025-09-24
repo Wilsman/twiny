@@ -11,6 +11,7 @@ export type ModId =
   | 'movement_speed' | 'dash_distance' | 'double_jump' | 'ghost_walk'
   | 'berserker' | 'vampire_aura' | 'time_dilation' | 'bullet_time'
   | 'explosive_death' | 'shield_regen'
+  | 'elemental_trail'
   | 'void_hooks' | 'volatile_payload' | 'sanguine_cycle';
 
 export type Rarity = 'common'|'uncommon'|'rare'|'epic'|'legendary';
@@ -284,6 +285,18 @@ export interface PoisonField {
   expiresAt: number;
   ownerId: string;
   accumulatedDamage?: number;
+}
+
+export interface ElementalTrailSegment {
+  id: string;
+  ownerId: string;
+  pos: { x: number; y: number };
+  radius: number;
+  effect: 'ignite' | 'poison' | 'shock';
+  createdAt: number;
+  expiresAt: number;
+  potency: number;
+  stacks: number;
 }
 
 export interface RaidStats {

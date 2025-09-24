@@ -455,6 +455,13 @@ export const MODS: ModDef[] = [
     },
   },
   {
+    id: "elemental_trail",
+    name: "Elemental Wake",
+    rarity: "rare",
+    desc: "Movement leaves elemental trails that scorch, poison, or shock foes.",
+    maxStacks: 3,
+  },
+  {
     id: "berserker",
     name: "Berserker Rage",
     rarity: "rare",

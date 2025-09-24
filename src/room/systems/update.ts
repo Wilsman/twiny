@@ -1,7 +1,7 @@
 import type { RoomDO } from '../index';
 import { XP_PER_KILL, XP_THRESHOLDS, statsFor, statusFrom, MOD_INDEX } from '../../upgrades';
 import type { Bullet, Player, Pickup, PickupType, Vec, Rect, WeaponDrop } from '../room-types';
-import type { BulletSpawnSpec, BulletTrait, WeaponId } from '../../types';
+import type { BulletSpawnSpec, BulletTrait, ElementalTrailSegment, WeaponId } from '../../types';
 import { TileId } from '../../config';
 import { triggerProcsOnHit, triggerProcsOnKill, triggerProcsOnShoot } from './weapon-procs';
 
@@ -32,6 +32,13 @@ const applyBulletVisualHints = (
     spec.visual = visual;
   }
 };
+
+
+const TRAIL_EFFECT_SEQUENCE: ElementalTrailSegment['effect'][] = ['ignite', 'poison', 'shock'];
+const TRAIL_BASE_INTERVAL_MS = 220;
+const TRAIL_MIN_INTERVAL_MS = 140;
+const TRAIL_MIN_DISTANCE = 6;
+const TRAIL_OFFSET_PX = 16;
 
 
 export function update(ctx: RoomDO) {
@@ -99,9 +106,13 @@ export function update(ctx: RoomDO) {
   // Update Poison Fields
   ctx.updatePoisonFields(now);
 
+  ctx.updateElementalTrails(now);
+
   // Integrate movement
   const dt = ctx.tickMs / 1000;
   for (const p of ctx.players.values()) {
+    const prevX = p.pos.x;
+    const prevY = p.pos.y;
     let baseSpeed = p.role === "streamer" ? ctx.cfg.speeds.streamer : ctx.cfg.speeds.zombie; // px/s
     if (p.role === 'zombie' && p.zClass) baseSpeed *= ctx.cfg.zombies.speedMul[p.zClass];
     if (p.role === "zombie" && (ctx.zombieSlowUntil || 0) > now) baseSpeed *= ctx.cfg.speeds.zombieSlowMultiplier; // global slow
@@ -340,6 +351,42 @@ export function update(ctx: RoomDO) {
           const nx = dx / dist, ny = dy / dist;
           const push = (pr - dist) + 0.5;
           p.pos.x += nx * push; p.pos.y += ny * push;
+        }
+      }
+    }
+
+    if (p.role === 'streamer') {
+      const stacks = Number(p.mods?.elemental_trail || 0);
+      if (stacks > 0) {
+        const moveDist = Math.hypot(p.pos.x - prevX, p.pos.y - prevY);
+        const nextAt = (p as any).elementalTrailNextAt || 0;
+        if (moveDist >= TRAIL_MIN_DISTANCE && now >= nextAt) {
+          const interval = Math.max(TRAIL_MIN_INTERVAL_MS, TRAIL_BASE_INTERVAL_MS - stacks * 20);
+          const dirX = p.pos.x - prevX;
+          const dirY = p.pos.y - prevY;
+          const lenMove = Math.hypot(dirX, dirY) || 1;
+          const offset = Math.min(TRAIL_OFFSET_PX, moveDist * 0.5 + 4);
+          const dropX = Math.max(0, Math.min(ctx.W, p.pos.x - (dirX / lenMove) * offset));
+          const dropY = Math.max(0, Math.min(ctx.H, p.pos.y - (dirY / lenMove) * offset));
+          const cycleIndex = ((p as any).elementalTrailCycle || 0) % TRAIL_EFFECT_SEQUENCE.length;
+          const effect = TRAIL_EFFECT_SEQUENCE[cycleIndex];
+          (p as any).elementalTrailCycle = cycleIndex + 1;
+          const duration = 2000 + (stacks - 1) * 500;
+          const radius = 24 + stacks * 3;
+          const potency = 3 + stacks * 2;
+          const segment: ElementalTrailSegment = {
+            id: crypto.randomUUID().slice(0, 8),
+            ownerId: p.id,
+            pos: { x: dropX, y: dropY },
+            radius,
+            effect,
+            createdAt: now,
+            expiresAt: now + duration,
+            potency,
+            stacks,
+          };
+          ctx.spawnElementalTrail(segment);
+          (p as any).elementalTrailNextAt = now + interval;
         }
       }
     }
