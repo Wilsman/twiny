@@ -253,7 +253,8 @@ export function moveAIZombie(ctx: RoomDO, zombie: AIZombie, dt: number) {
 
 export function aiZombieAttackStreamer(ctx: RoomDO, zombie: AIZombie, streamer: Player, now: number) {
   const shielded = ((streamer as any).shieldUntil || 0) > now;
-  if (shielded) return;
+  const upgradePaused = !!(streamer as any)?.upgradePaused;
+  if (shielded || upgradePaused) return;
   
   if ((streamer.hp ?? ctx.cfg.streamer.maxHp) > 0) {
     streamer.hp = Math.max(0, (streamer.hp ?? ctx.cfg.streamer.maxHp) - ctx.cfg.combat.zombieTouchDamage);

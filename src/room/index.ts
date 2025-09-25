@@ -480,6 +480,7 @@ export class RoomDO {
     streamer.mods = {};
     streamer.level = 0;
     streamer.xp = 0;
+    (streamer as any).upgradePaused = false;
     streamer.vel = { x: 0, y: 0 };
     streamer.input = {
       up: false,
@@ -767,7 +768,14 @@ export class RoomDO {
           if (!p || p.role !== "streamer") return;
           const id = String(msg.id || "");
           if (!MOD_INDEX[id as keyof typeof MOD_INDEX]) return;
+          (p as any).upgradePaused = false;
           this.applyUpgrade(p.id, id as any);
+          break;
+        }
+        case "upgrade_pause": {
+          const p = this.players.get(pid);
+          if (!p || p.role !== "streamer") return;
+          (p as any).upgradePaused = !!msg.paused;
           break;
         }
         case "emote": {

@@ -54,6 +54,7 @@ export function update(ctx: RoomDO) {
   };
 
   let streamer = [...ctx.players.values()].find(p => p.role === "streamer");
+  const upgradePaused = !!(streamer as any)?.upgradePaused;
 
   if (!ctx.roundActive) {
     return;
@@ -246,7 +247,7 @@ export function update(ctx: RoomDO) {
       if (isSpikes(t)) {
         const lastSpikeDamage = (p as any).lastSpikeDamage || 0;
         if (now - lastSpikeDamage > 500) { // Damage every 0.5 seconds
-          if (p.role === 'streamer') {
+          if (p.role === 'streamer' && !upgradePaused) {
             const damage = 8; // Moderate damage
             p.hp = Math.max(0, (p.hp ?? ctx.cfg.streamer.maxHp) - damage);
             ctx.trackDamageTaken(p, damage);
@@ -288,7 +289,7 @@ export function update(ctx: RoomDO) {
         
         const lastPoisonDamage = (p as any).lastPoisonDamage || 0;
         if (now - lastPoisonDamage > 1000) { // Damage every 1 second
-          if (p.role === 'streamer') {
+          if (p.role === 'streamer' && !upgradePaused) {
             const damage = 6; // Moderate damage
             p.hp = Math.max(0, (p.hp ?? ctx.cfg.streamer.maxHp) - damage);
             ctx.trackDamageTaken(p, damage);
@@ -1119,7 +1120,7 @@ export function update(ctx: RoomDO) {
     if (g.ttl <= 0) continue;
     if (g.pos.x < 0 || g.pos.x > ctx.W || g.pos.y < 0 || g.pos.y > ctx.H) continue;
     // collide with streamer
-    if (streamer) {
+    if (streamer && !upgradePaused) {
       const r = ctx.cfg.radii.streamer + 2;
       if (Math.hypot(streamer.pos.x - g.pos.x, streamer.pos.y - g.pos.y) < r) {
         // apply slow and small damage
@@ -1173,7 +1174,7 @@ export function update(ctx: RoomDO) {
       const dist = Math.hypot(z.pos.x - streamer.pos.x, z.pos.y - streamer.pos.y);
       if (dist < 16) {
         const shielded = ((streamer as any).shieldUntil || 0) > now;
-        if (!shielded && !isInvulnerable) {
+        if (!shielded && !isInvulnerable && !upgradePaused) {
           if ((streamer.hp ?? ctx.cfg.streamer.maxHp) > 0) {
             streamer.hp = Math.max(0, (streamer.hp ?? ctx.cfg.streamer.maxHp) - ctx.cfg.combat.zombieTouchDamage);
             ctx.trackDamageTaken(streamer, ctx.cfg.combat.zombieTouchDamage);

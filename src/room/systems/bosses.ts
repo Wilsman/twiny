@@ -195,8 +195,9 @@ export function updateBoss(ctx: RoomDO, boss: Boss, now: number) {
   // Handle contact damage with cooldown and range check
   if (boss.state === "attacking" && streamer && dist < boss.radius + ctx.cfg.radii.streamer + 10) {
     // Add damage cooldown to prevent hitting every tick and ensure close range
-    // Also prevent damage while boss is phased
-    if ((!boss.lastDamage || now - boss.lastDamage > 1000) && dist < 100 && !boss.phased) { // 1 second cooldown + max 100px range + not phased
+    // Also prevent damage while boss is phased or upgrade paused
+    const upgradePaused = !!(streamer as any)?.upgradePaused;
+    if ((!boss.lastDamage || now - boss.lastDamage > 1000) && dist < 100 && !boss.phased && !upgradePaused) { // 1 second cooldown + max 100px range + not phased + not upgrade paused
       let damage = boss.damage;
       if (boss.enraged && boss.type === "bruteKing") {
         damage *= ctx.cfg.bosses.types.bruteKing.abilities.enrage.damageMul;
@@ -540,8 +541,9 @@ export function updatePoisonFields(ctx: RoomDO, now: number) {
     // Damage streamer if in poison field
     const streamer = [...ctx.players.values()].find(p => p.role === "streamer" && p.alive);
     if (streamer) {
+      const upgradePaused = !!(streamer as any)?.upgradePaused;
       const dist = Math.hypot(streamer.pos.x - field.pos.x, streamer.pos.y - field.pos.y);
-      if (dist <= field.radius) {
+      if (dist <= field.radius && !upgradePaused) {
         // Accumulate fractional damage to prevent rounding to 0
         field.accumulatedDamage = (field.accumulatedDamage || 0) + (field.dps * (ctx.tickMs / 1000));
         const damage = Math.floor(field.accumulatedDamage);

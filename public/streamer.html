@@ -31,15 +31,6 @@
               </div>
             </div>
             <div class="hud-stack hud-middle-left">
-              <div id="upgradeOverlay" class="hud-panel hidden">
-                <div class="hud-panel-title mono">Level Up! Choose an upgrade</div>
-                <div class="choices">
-                  <button class="choice" data-idx="0"></button>
-                  <button class="choice" data-idx="1"></button>
-                  <button class="choice" data-idx="2"></button>
-                </div>
-                <div class="tip mono">Press 1 / 2 / 3</div>
-              </div>
               <div id="buffPanel" class="hud-panel hidden">
                 <div class="hud-panel-title">Current Upgrades</div>
                 <div class="hud-buff-list" id="buffList"></div>
@@ -115,6 +106,20 @@
     </div>
     <div class="hit-flash" id="flash"></div>
     <div class="swap-prompt" id="swapPrompt"></div>
+    
+    <!-- Upgrade overlay - centered on game area -->
+    <div id="upgradeOverlay" class="upgrade-overlay hidden">
+      <div class="upgrade-panel">
+        <div class="upgrade-title mono">Level Up! Choose an upgrade</div>
+        <div class="choices">
+          <button class="choice" data-idx="0"></button>
+          <button class="choice" data-idx="1"></button>
+          <button class="choice" data-idx="2"></button>
+        </div>
+        <div class="tip mono">Press 1 / 2 / 3</div>
+      </div>
+    </div>
+    
     <div class="countdown-overlay hidden" id="countdownOverlay">
       <div class="countdown-text" id="countdownText"></div>
     </div>
@@ -689,6 +694,8 @@
       let countdownActive = false;
       let countdownHideTimeout = null;
       let lastCountdownDisplayed = null;
+      let gamePaused = false;
+      let serverUpgradePaused = false;
 
       const backgroundMusic = new Audio('/Digital Frenzy.mp3');
       backgroundMusic.loop = true;
@@ -867,6 +874,7 @@
 
       function handleRoundRestart() {
         roundActive = false;
+        resumeGameplay();
         gameStartTime = Date.now();
         lastPlayerPos = { x: 0, y: 0 };
         prevBullets = new Map();
@@ -881,9 +889,37 @@
         currentChoices = [];
         overlay.classList.add('hidden');
         choiceEls.forEach((el) => { el.textContent = ''; el.disabled = true; });
-        hideDeathScreen();
         restartRaidBtn.disabled = false;
         hideCountdownOverlay();
+      }
+
+      function setServerUpgradePause(next) {
+        if (serverUpgradePaused === next) return;
+        serverUpgradePaused = next;
+        if (!ws || ws.readyState !== 1) return;
+        try {
+          ws.send(JSON.stringify({ type: 'upgrade_pause', paused: next }));
+        } catch {}
+      }
+
+      function pauseGameplay() {
+        if (gamePaused) return;
+        gamePaused = true;
+        setServerUpgradePause(true);
+        if (sendNeutralHandler) {
+          try {
+            sendNeutralHandler();
+          } catch {}
+        }
+      }
+
+      function resumeGameplay() {
+        if (!gamePaused) {
+          setServerUpgradePause(false);
+          return;
+        }
+        gamePaused = false;
+        setServerUpgradePause(false);
       }
 
       function showNextUpgrade() {
@@ -891,6 +927,7 @@
           currentChoices = [];
           choiceEls.forEach((el) => { el.textContent = ''; el.disabled = true; });
           overlay.classList.add('hidden');
+          resumeGameplay();
           return;
         }
         currentChoices = upgradeQueue.shift();
@@ -900,6 +937,7 @@
           el.disabled = false;
           el.textContent = `${i + 1}) ${choice.name} - ${choice.desc}`;
         });
+        pauseGameplay();
         overlay.classList.remove('hidden');
       }
 
@@ -916,6 +954,7 @@
         const choice = currentChoices[index];
         if (!choice || !ws) return;
         try { ws.send(JSON.stringify({ type: 'choose_upgrade', id: choice.id })); } catch {}
+        resumeGameplay();
         showNextUpgrade();
       }
 
@@ -1301,7 +1340,7 @@
           }
         });
         inputIv = setInterval(() => {
-          if (ws && ws.readyState === 1 && !isPlayerDead && roundActive) {
+          if (ws && ws.readyState === 1 && !isPlayerDead && roundActive && !gamePaused) {
             // Convert screen aim to world coordinates via camera + zoom
             const aimWX = camX + input.aimX / zoom;
             const aimWY = camY + input.aimY / zoom;
@@ -1377,6 +1416,7 @@
       }
 
       function leaveRoom(manual = true) {
+        resumeGameplay();
         if (swapPromptEl) swapPromptEl.classList.remove('show');
         swapPromptState = null;
         hideCountdownOverlay();
@@ -1439,6 +1479,9 @@
       }
 
       function draw(dt = 16) {
+        if (gamePaused) {
+          return;
+        }
         const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
         const rect = c.getBoundingClientRect();
         const frameNow = performance.now();
