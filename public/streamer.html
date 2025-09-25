@@ -875,6 +875,7 @@
       function handleRoundRestart() {
         roundActive = false;
         resumeGameplay();
+        hideDeathScreen();
         gameStartTime = Date.now();
         lastPlayerPos = { x: 0, y: 0 };
         prevBullets = new Map();
@@ -891,6 +892,9 @@
         choiceEls.forEach((el) => { el.textContent = ''; el.disabled = true; });
         restartRaidBtn.disabled = false;
         hideCountdownOverlay();
+        // Reset upgrade pause state
+        gamePaused = false;
+        serverUpgradePaused = false;
       }
 
       function setServerUpgradePause(next) {

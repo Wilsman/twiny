@@ -496,6 +496,26 @@ export class RoomDO {
     streamer.lastDashAt = 0;
     streamer.dashUntil = undefined;
     streamer.weaponBoostUntil = undefined;
+    streamer.lastShotAt = undefined;
+    streamer.lastMeleeAt = undefined;
+    streamer.boostUntil = undefined;
+    streamer.emote = undefined;
+    streamer.emoteUntil = undefined;
+    streamer.lagMs = undefined;
+    streamer.inputBuffer = undefined;
+    streamer.lastInputTime = undefined;
+    streamer.burns = undefined;
+    streamer.bleeds = undefined;
+    streamer.slowUntil = undefined;
+    streamer.slowMul = undefined;
+    streamer.lastShieldRegen = undefined;
+    streamer.hpShield = undefined;
+    // Clear any temporary status effects
+    (streamer as any).gooSlowUntil = undefined;
+    (streamer as any).shieldUntil = undefined;
+    (streamer as any).lastSpikeDamage = undefined;
+    (streamer as any).lastPoisonDamage = undefined;
+    (streamer as any).lastPoisonToast = undefined;
     this.initRaidStats(streamer);
 
     const now = Date.now();
@@ -531,6 +551,23 @@ export class RoomDO {
         } else {
           p.nextSpitAt = undefined;
         }
+        // Clear zombie status effects
+        p.lastAbilityAt = undefined;
+        p.chargeUntil = undefined;
+        p.chargeDirX = undefined;
+        p.chargeDirY = undefined;
+        p.slowUntil = undefined;
+        p.slowMul = undefined;
+        p.burns = undefined;
+        p.bleeds = undefined;
+        p.cloaked = undefined;
+        p.cloakUntil = undefined;
+        p.uncloakUntil = undefined;
+        p.fuseStarted = undefined;
+        p.fuseUntil = undefined;
+        p.boostUntil = undefined;
+        p.emote = undefined;
+        p.emoteUntil = undefined;
         p.pos = this.spawnZombieAwayFrom(streamer.pos, 200);
       }
     }
