@@ -69,6 +69,12 @@ export function updateBoss(ctx: RoomDO, boss: Boss, now: number) {
     return;
   }
   
+  const upgradePaused = !!(streamer as any)?.upgradePaused;
+  // Skip movement and AI updates if upgrade paused
+  if (upgradePaused) {
+    return;
+  }
+  
   // End charge ability if duration has passed
   if (boss.state === "ability" && boss.type === "bruteKing" && boss.chargeUntil && now >= boss.chargeUntil) {
     boss.state = "chasing";

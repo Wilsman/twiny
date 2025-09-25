@@ -92,17 +92,23 @@ export function update(ctx: RoomDO) {
 
   // Extractions removed
 
-  // Update AI Zombies
-  ctx.updateAIZombies(now);
+  // Update AI Zombies (skip if upgrade paused)
+  if (!upgradePaused) {
+    ctx.updateAIZombies(now);
+  }
 
-  // Spawn AI Zombies if needed
-  ctx.spawnAIZombiesIfNeeded(now);
+  // Spawn AI Zombies if needed (skip if upgrade paused)
+  if (!upgradePaused) {
+    ctx.spawnAIZombiesIfNeeded(now);
+  }
 
-  // Update Boss System
+  // Update Boss System (skip movement if upgrade paused)
   ctx.updateBossSystem(now);
 
-  // Update Boss Minions
-  ctx.updateBossMinions(now);
+  // Update Boss Minions (skip if upgrade paused)
+  if (!upgradePaused) {
+    ctx.updateBossMinions(now);
+  }
 
   // Update Poison Fields
   ctx.updatePoisonFields(now);
@@ -112,6 +118,10 @@ export function update(ctx: RoomDO) {
   // Integrate movement
   const dt = ctx.tickMs / 1000;
   for (const p of ctx.players.values()) {
+    // Skip zombie movement if upgrade paused (but allow streamer to move)
+    if (p.role === "zombie" && upgradePaused) {
+      continue;
+    }
     const prevX = p.pos.x;
     const prevY = p.pos.y;
     let baseSpeed = p.role === "streamer" ? ctx.cfg.speeds.streamer : ctx.cfg.speeds.zombie; // px/s
@@ -799,8 +809,11 @@ export function update(ctx: RoomDO) {
   const aliveBullets: Bullet[] = [];
   for (const b of ctx.bullets) {
     b.ttl -= ctx.tickMs;
-    b.pos.x += b.vel.x * dt;
-    b.pos.y += b.vel.y * dt;
+    // Skip movement if upgrade paused
+    if (!upgradePaused) {
+      b.pos.x += b.vel.x * dt;
+      b.pos.y += b.vel.y * dt;
+    }
     if (b.ttl <= 0) continue;
     if (b.pos.x < 0 || b.pos.x > ctx.W || b.pos.y < 0 || b.pos.y > ctx.H) continue;
 
@@ -1115,8 +1128,11 @@ export function update(ctx: RoomDO) {
   const aliveGlobs: typeof ctx.spittles = [];
   for (const g of ctx.spittles) {
     g.ttl -= ctx.tickMs;
-    g.pos.x += g.vel.x * dt;
-    g.pos.y += g.vel.y * dt;
+    // Skip movement if upgrade paused
+    if (!upgradePaused) {
+      g.pos.x += g.vel.x * dt;
+      g.pos.y += g.vel.y * dt;
+    }
     if (g.ttl <= 0) continue;
     if (g.pos.x < 0 || g.pos.x > ctx.W || g.pos.y < 0 || g.pos.y > ctx.H) continue;
     // collide with streamer
