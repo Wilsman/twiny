@@ -1,10 +1,10 @@
-<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Arena Shooter Streamer</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/sprites/weapons.css" />
   </head>
   <body class="game">
     <div class="topbar">
@@ -51,7 +51,7 @@
                 </div>
               </div>
               <div class="hud-pill">
-                <span>Weapon: <strong id="hudWeapon">--</strong></span>
+                <span>Weapon: <span class="weapon-sprite hud-weapon-icon" id="hudWeaponIcon"></span><strong id="hudWeapon">--</strong></span>
                 <span>Ammo: <strong id="hudAmmo">0</strong></span>
               </div>
             </div>
@@ -667,6 +667,7 @@
       const upgradeQueue = [];
       const hudBankedEl = document.getElementById("hudBanked");
       const hudWeaponEl = document.getElementById("hudWeapon");
+      const hudWeaponIconEl = document.getElementById("hudWeaponIcon");
       const hudAmmoEl = document.getElementById("hudAmmo");
       const hudHpEl = document.getElementById("hudHp");
       const hudLevelEl = document.getElementById("hudLevel");
@@ -896,6 +897,41 @@
         gamePaused = false;
         serverUpgradePaused = false;
       }
+
+      function updateWeaponIcon(weaponType) {
+        if (!hudWeaponIconEl) return;
+        
+        // Remove all weapon classes
+        hudWeaponIconEl.className = 'weapon-sprite hud-weapon-icon';
+        
+        // Add specific weapon class
+        switch(weaponType) {
+          case 'pistol':
+            hudWeaponIconEl.classList.add('weapon-pistol');
+            break;
+          case 'smg':
+            hudWeaponIconEl.classList.add('weapon-smg');
+            break;
+          case 'shotgun':
+            hudWeaponIconEl.classList.add('weapon-shotgun');
+            break;
+          case 'railgun':
+            hudWeaponIconEl.classList.add('weapon-railgun');
+            break;
+          case 'flamethrower':
+            hudWeaponIconEl.classList.add('weapon-flamethrower');
+            break;
+          case 'melee':
+            hudWeaponIconEl.classList.add('weapon-melee');
+            break;
+          default:
+            // Hide icon for unknown weapons
+            hudWeaponIconEl.style.display = 'none';
+            return;
+        }
+        hudWeaponIconEl.style.display = 'inline-block';
+      }
+
 
       function setServerUpgradePause(next) {
         if (serverUpgradePaused === next) return;
@@ -1257,6 +1293,7 @@
               if (hudScoreEl) hudScoreEl.textContent = String(me.score ?? 0);
               if (hudBankedEl) hudBankedEl.textContent = String(me.banked ?? 0);
               if (hudWeaponEl) hudWeaponEl.textContent = w;
+              updateWeaponIcon(w);
               
               // Initialize health bar if not done yet
               if (healthSegmentsEl && healthSegmentsEl.children.length === 0) {
@@ -1291,6 +1328,7 @@
               if (hudScoreEl) hudScoreEl.textContent = '0';
               if (hudBankedEl) hudBankedEl.textContent = '0';
               if (hudWeaponEl) hudWeaponEl.textContent = '--';
+        updateWeaponIcon('');
               if (hudAmmoEl) hudAmmoEl.textContent = '0';
               // Clear health bar segments
               if (healthSegmentsEl) healthSegmentsEl.innerHTML = '';
@@ -3089,9 +3127,41 @@
         `;
           lastNerdUpdate = now;
         }
+        
+        // Handle canvas resize for weapon drop positioning
+        const resizeObserver = new ResizeObserver(() => {
+          setTimeout(renderWeaponDropSprites, 50);
+        });
+        if (document.querySelector('canvas.arena')) {
+          resizeObserver.observe(document.querySelector('canvas.arena'));
+        }
+                renderWeaponDropSprites();
         requestAnimationFrame(loop);
       }
-      loop();
+      
+      // Weapon drop sprite rendering
+      function renderWeaponDropSprites() {
+        if (!state || !state.weaponDrops) return;
+        
+        // Clear existing weapon drop sprites
+        document.querySelectorAll('.world-weapon-drop').forEach(el => el.remove());
+        
+        const gameContainer = document.querySelector('.stage') || document.body;
+        
+        state.weaponDrops.forEach(drop => {
+          const spriteEl = document.createElement('div');
+          spriteEl.className = 'weapon-sprite world-weapon-drop weapon-' + (drop.weapon || 'pistol');
+          spriteEl.style.position = 'absolute';
+          spriteEl.style.left = (drop.x - 24) + 'px';
+          spriteEl.style.top = (drop.y - 12) + 'px';
+          spriteEl.style.zIndex = '10';
+          spriteEl.style.pointerEvents = 'none';
+          spriteEl.style.filter = 'drop-shadow(0 0 12px #ffd700) drop-shadow(0 0 6px #ffaa00) brightness(1.2)';
+          
+          gameContainer.appendChild(spriteEl);
+        });
+      }
+            loop();
 
       // Fullscreen toggle
       document.getElementById("fullscreen").onclick = async () => {
@@ -3134,3 +3204,11 @@
     </script>
   </body>
 </html>
+
+
+
+
+
+
+
+

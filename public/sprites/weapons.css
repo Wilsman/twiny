@@ -1,0 +1,61 @@
+/* Individual weapon sprite files */
+.weapon-sprite {
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-size: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.weapon-pistol {
+  background-image: url('/sprites/pistol.png');
+}
+
+.weapon-shotgun {
+  background-image: url('/sprites/shotgun.png');
+}
+
+.weapon-smg {
+  background-image: url('/sprites/smg.png');
+}
+
+.weapon-railgun {
+  background-image: url('/sprites/raygun.png');
+}
+
+.weapon-flamethrower {
+  background-image: url('/sprites/flamethrower.png');
+}
+
+.weapon-melee {
+  background-image: url('/sprites/bat.png');
+}
+
+/* Scaling options */
+.weapon-sprite-small {
+  transform: scale(0.5);
+  transform-origin: top left;
+}
+
+.weapon-sprite-large {
+  transform: scale(1.5);
+  transform-origin: center;
+}
+
+/* For HUD display */
+.hud-weapon-icon {
+  width: 32px;
+  height: 20px;
+  margin-right: 8px;
+  vertical-align: middle;
+  display: inline-block;
+}
+
+/* For weapon drops in game world */
+.world-weapon-drop {
+  width: 48px;
+  height: 24px;
+  transform: scale(0.75);
+  filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.5));
+}
