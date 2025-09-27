@@ -13,6 +13,11 @@
       <span class="badge" id="status" data-state="disconnected">disconnected</span>
     </div>
     <div class="right-controls">
+      <div class="audio-controls">
+        <button id="musicMute" type="button">Mute</button>
+        <input id="musicVolume" class="audio-slider" type="range" min="0" max="100" value="1" />
+        <span id="musicVolumeValue" class="audio-value">1%</span>
+      </div>
       <button id="fullscreen">Fullscreen</button>
       <button id="nerdToggle">Nerd Stats</button>
     </div>
@@ -69,6 +74,76 @@
     const backgroundMusic = new Audio('/Digital Frenzy.mp3');
     backgroundMusic.loop = true;
     backgroundMusic.volume = 0.01;
+
+    const musicMuteButton = document.getElementById("musicMute");
+    const musicVolumeSlider = document.getElementById("musicVolume");
+    const musicVolumeValue = document.getElementById("musicVolumeValue");
+    const DEFAULT_MUSIC_VOLUME = 0.01;
+    let lastSetMusicVolume = backgroundMusic.volume || DEFAULT_MUSIC_VOLUME;
+
+    function updateMusicVolumeLabel(value) {
+      if (musicVolumeValue) {
+        musicVolumeValue.textContent = `${value}%`;
+      }
+    }
+
+    function updateMusicMuteButton() {
+      if (musicMuteButton) {
+        musicMuteButton.textContent = backgroundMusic.muted ? "Unmute" : "Mute";
+      }
+    }
+
+    if (musicVolumeSlider) {
+      const initialValue = Math.round(backgroundMusic.volume * 100);
+      musicVolumeSlider.value = String(initialValue);
+      updateMusicVolumeLabel(initialValue);
+      musicVolumeSlider.addEventListener("input", () => {
+        const sliderValue = Number(musicVolumeSlider.value);
+        const volume = sliderValue / 100;
+        backgroundMusic.volume = volume;
+
+        if (sliderValue === 0) {
+          backgroundMusic.muted = true;
+        } else {
+          lastSetMusicVolume = volume;
+          if (backgroundMusic.muted) {
+            backgroundMusic.muted = false;
+          }
+        }
+
+        updateMusicMuteButton();
+        updateMusicVolumeLabel(sliderValue);
+      });
+    } else if (musicVolumeValue) {
+      updateMusicVolumeLabel(Math.round(backgroundMusic.volume * 100));
+    }
+
+    if (musicMuteButton) {
+      updateMusicMuteButton();
+      musicMuteButton.addEventListener("click", () => {
+        if (backgroundMusic.muted || backgroundMusic.volume === 0) {
+          backgroundMusic.muted = false;
+          const restored = lastSetMusicVolume > 0 ? lastSetMusicVolume : DEFAULT_MUSIC_VOLUME;
+          backgroundMusic.volume = restored;
+          if (musicVolumeSlider) {
+            const sliderValue = Math.round(restored * 100);
+            musicVolumeSlider.value = String(sliderValue);
+            updateMusicVolumeLabel(sliderValue);
+          }
+        } else {
+          backgroundMusic.muted = true;
+          if (backgroundMusic.volume > 0) {
+            lastSetMusicVolume = backgroundMusic.volume;
+          }
+          if (musicVolumeSlider) {
+            musicVolumeSlider.value = "0";
+            updateMusicVolumeLabel(0);
+          }
+        }
+
+        updateMusicMuteButton();
+      });
+    }
 
     function playBackgroundMusic() {
       if (backgroundMusic.paused) {
