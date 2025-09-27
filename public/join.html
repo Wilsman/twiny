@@ -187,6 +187,28 @@
     let prevBullets = new Map();
     const bulletTrailHistory = new Map();
 
+    const weaponDropSpriteSources = {
+      pistol: '/sprites/pistol.png',
+      smg: '/sprites/smg.png',
+      shotgun: '/sprites/shotgun.png',
+      railgun: '/sprites/raygun.png',
+      flamethrower: '/sprites/flamethrower.png',
+      melee: '/sprites/bat.png',
+    };
+    const weaponDropSpriteCache = {};
+    for (const [weaponName, src] of Object.entries(weaponDropSpriteSources)) {
+      const img = new Image();
+      img.src = src;
+      weaponDropSpriteCache[weaponName] = img;
+    }
+    function resolveWeaponDropSprite(weaponName) {
+      const key = weaponDropSpriteCache[weaponName] ? weaponName : 'pistol';
+      const img = weaponDropSpriteCache[key];
+      if (!img) return null;
+      if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) return img;
+      return null;
+    }
+
     const status = document.getElementById('status');
     const playersEl = document.getElementById('players');
     const nameEl = document.getElementById('name');
@@ -807,6 +829,45 @@
         ctx.fillStyle = '#2a2f36';
         for (const w of state.walls){ ctx.fillRect(w.x,w.y,w.w,w.h); }
       }
+      if (state.weaponDrops) {
+        for (const drop of state.weaponDrops) {
+          const sprite = resolveWeaponDropSprite(drop.weapon);
+          const floatOffset = Math.sin((frameNow + (drop.x * 17) + (drop.y * 13)) * 0.003) * 3;
+          const fx = drop.x;
+          const fy = drop.y + floatOffset;
+
+          const glow = ctx.createRadialGradient(fx, fy, 6, fx, fy, 26);
+          glow.addColorStop(0, 'rgba(255, 222, 121, 0.6)');
+          glow.addColorStop(1, 'rgba(253, 156, 43, 0)');
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(fx, fy, 26, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          if (sprite) {
+            const naturalW = sprite.naturalWidth || sprite.width || 64;
+            const naturalH = sprite.naturalHeight || sprite.height || 32;
+            const scale = 0.55;
+            const sw = naturalW * scale;
+            const sh = naturalH * scale;
+            ctx.save();
+            ctx.translate(fx, fy);
+            ctx.drawImage(sprite, -sw / 2, -sh / 2, sw, sh);
+            ctx.restore();
+          } else {
+            ctx.save();
+            ctx.fillStyle = '#ffd180';
+            ctx.beginPath();
+            ctx.arc(fx, fy, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+
       // Extractions removed
       // Pickups
       if (state.pickups){
