@@ -785,6 +785,27 @@
       const hudBankedEl = document.getElementById("hudBanked");
       const hudWeaponEl = document.getElementById("hudWeapon");
       const hudWeaponIconEl = document.getElementById("hudWeaponIcon");
+      const weaponDropSpriteSources = {
+        pistol: '/sprites/pistol.png',
+        smg: '/sprites/smg.png',
+        shotgun: '/sprites/shotgun.png',
+        railgun: '/sprites/raygun.png',
+        flamethrower: '/sprites/flamethrower.png',
+        melee: '/sprites/bat.png',
+      };
+      const weaponDropSpriteCache = {};
+      for (const [weaponName, src] of Object.entries(weaponDropSpriteSources)) {
+        const img = new Image();
+        img.src = src;
+        weaponDropSpriteCache[weaponName] = img;
+      }
+      function resolveWeaponDropSprite(weaponName) {
+        const key = weaponDropSpriteCache[weaponName] ? weaponName : 'pistol';
+        const img = weaponDropSpriteCache[key];
+        if (!img) return null;
+        if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) return img;
+        return null;
+      }
       const hudAmmoEl = document.getElementById("hudAmmo");
       const hudHpEl = document.getElementById("hudHp");
       const hudLevelEl = document.getElementById("hudLevel");
@@ -1779,27 +1800,40 @@
         }
         if (state.weaponDrops) {
           for (const drop of state.weaponDrops) {
-            const glow = ctx.createRadialGradient(drop.x, drop.y, 6, drop.x, drop.y, 34);
-            glow.addColorStop(0, 'rgba(255, 235, 130, 0.95)');
+            const sprite = resolveWeaponDropSprite(drop.weapon);
+            const floatOffset = Math.sin((frameNow + (drop.x * 17) + (drop.y * 13)) * 0.003) * 3;
+            const fx = drop.x;
+            const fy = drop.y + floatOffset;
+
+            const glow = ctx.createRadialGradient(fx, fy, 6, fx, fy, 26);
+            glow.addColorStop(0, 'rgba(255, 222, 121, 0.6)');
             glow.addColorStop(1, 'rgba(253, 156, 43, 0)');
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.fillStyle = glow;
             ctx.beginPath();
-            ctx.arc(drop.x, drop.y, 34, 0, Math.PI * 2);
+            ctx.arc(fx, fy, 26, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
 
-            ctx.save();
-            ctx.fillStyle = '#ffecb3';
-            ctx.font = '12px system-ui';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(drop.weapon.toUpperCase(), drop.x, drop.y - 18);
-            ctx.fillStyle = '#ffd180';
-            ctx.font = '10px system-ui';
-            ctx.fillText('Press F', drop.x, drop.y + 18);
-            ctx.restore();
+            if (sprite) {
+              const naturalW = (sprite.naturalWidth || sprite.width || 64);
+              const naturalH = (sprite.naturalHeight || sprite.height || 32);
+              const scale = 0.075;
+              const sw = naturalW * scale;
+              const sh = naturalH * scale;
+              ctx.save();
+              ctx.translate(fx, fy);
+              ctx.drawImage(sprite, -sw / 2, -sh / 2, sw, sh);
+              ctx.restore();
+            } else {
+              ctx.save();
+              ctx.fillStyle = '#ffd180';
+              ctx.beginPath();
+              ctx.arc(fx, fy, 10, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            }
 
             if (meHud) {
               const dist = Math.hypot(meHud.x - drop.x, meHud.y - drop.y);
@@ -3360,40 +3394,9 @@
           lastNerdUpdate = now;
         }
         
-        // Handle canvas resize for weapon drop positioning
-        const resizeObserver = new ResizeObserver(() => {
-          setTimeout(renderWeaponDropSprites, 50);
-        });
-        if (document.querySelector('canvas.arena')) {
-          resizeObserver.observe(document.querySelector('canvas.arena'));
-        }
-                renderWeaponDropSprites();
         requestAnimationFrame(loop);
       }
-      
-      // Weapon drop sprite rendering
-      function renderWeaponDropSprites() {
-        if (!state || !state.weaponDrops) return;
-        
-        // Clear existing weapon drop sprites
-        document.querySelectorAll('.world-weapon-drop').forEach(el => el.remove());
-        
-        const gameContainer = document.querySelector('.stage') || document.body;
-        
-        state.weaponDrops.forEach(drop => {
-          const spriteEl = document.createElement('div');
-          spriteEl.className = 'weapon-sprite world-weapon-drop weapon-' + (drop.weapon || 'pistol');
-          spriteEl.style.position = 'absolute';
-          spriteEl.style.left = (drop.x - 24) + 'px';
-          spriteEl.style.top = (drop.y - 12) + 'px';
-          spriteEl.style.zIndex = '10';
-          spriteEl.style.pointerEvents = 'none';
-          spriteEl.style.filter = 'drop-shadow(0 0 12px #ffd700) drop-shadow(0 0 6px #ffaa00) brightness(1.2)';
-          
-          gameContainer.appendChild(spriteEl);
-        });
-      }
-            loop();
+      loop();
 
       // Fullscreen toggle
       document.getElementById("fullscreen").onclick = async () => {
