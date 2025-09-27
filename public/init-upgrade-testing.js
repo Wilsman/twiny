@@ -29,10 +29,16 @@ function initWhenReady() {
   // Initialize upgrade testing
   console.log('Initializing upgrade testing...');
   const upgradeTestingAPI = initUpgradeTesting(window.ws, window.gameState);
-  
+
   if (upgradeTestingAPI) {
     // Store globally for access
     window.upgradeTestingAPI = upgradeTestingAPI;
+    if (window.ws) {
+      upgradeTestingAPI.setWebSocket?.(window.ws);
+    }
+    if (window.gameState) {
+      upgradeTestingAPI.setGameState?.(window.gameState);
+    }
     console.log('Upgrade testing initialized successfully');
   } else {
     console.warn('Failed to initialize upgrade testing');
@@ -56,8 +62,8 @@ function detectTestingMode() {
     // Check if we're in testing mode by looking at game state
     // This might need to be updated based on how the game state is managed
     setTimeout(() => {
-      if (window.gameState && window.gameState.gameMode === 'testing') {
-        window.upgradeTestingAPI.updateVisibility();
+      if (window.gameState && window.gameState.gameMode === 'testing' && window.upgradeTestingAPI) {
+        window.upgradeTestingAPI.setGameState?.(window.gameState);
       }
     }, 1000);
   }

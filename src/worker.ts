@@ -72,6 +72,29 @@ export default {
       return new Response(JSON.stringify({ roomId }), { headers: { "content-type": "application/json" } });
     }
 
+    // Forward testing-mode overrides to the room Durable Object
+    if (url.pathname.startsWith("/api/rooms/") && url.pathname.endsWith("/setup") && req.method === "POST") {
+      const segments = url.pathname.split("/").filter(Boolean);
+      const roomId = segments[2];
+      if (!roomId) {
+        return new Response("Missing room id", { status: 400 });
+      }
+      const id = env.ROOMS.idFromName(roomId);
+      const stub = env.ROOMS.get(id);
+      const body = await req.text();
+      const contentType = req.headers.get('content-type') || 'application/json';
+      try {
+        return await stub.fetch(new Request(`https://do/${roomId}/setup`, {
+          method: 'POST',
+          headers: { 'content-type': contentType },
+          body
+        }));
+      } catch (err) {
+        console.error('Failed to forward /setup request', err);
+        return new Response("Room setup failed", { status: 502 });
+      }
+    }
+
     // Upgrades API endpoint
     if (url.pathname === "/upgrades") {
       const { MODS } = await import("./upgrades");

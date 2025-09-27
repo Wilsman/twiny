@@ -129,6 +129,16 @@ export function minimalCanvas(w, h) {
 
 export function inputController(opts={ mouse:true }) {
   const state = { up:false,down:false,left:false,right:false,shoot:false,melee:false,dash:false,interact:false,aimX:0,aimY:0 };
+
+  const isUiTarget = (target) => {
+    if (!target || typeof target.closest !== 'function') return false;
+    return Boolean(
+      target.closest('#upgradeTestPanel') ||
+      target.closest('.hud-layer') ||
+      target.closest('.sidebar') ||
+      target.closest('.topbar')
+    );
+  };
   addEventListener("keydown", e => { if (e.repeat) return; if (e.key==="w"||e.key==="ArrowUp") state.up=true;
     if (e.key==="s"||e.key==="ArrowDown") state.down=true; if (e.key==="a"||e.key==="ArrowLeft") state.left=true; if (e.key==="d"||e.key==="ArrowRight") state.right=true; if (e.key==="q"||e.key==="e") state.melee=true; if (e.key==="f"||e.key==="F") state.interact=true; if (e.code==="Space") state.dash=true; });
   addEventListener("keyup", e => { if (e.key==="w"||e.key==="ArrowUp") state.up=false;
@@ -136,8 +146,15 @@ export function inputController(opts={ mouse:true }) {
   if (opts.mouse) {
     addEventListener("mousemove", e => { const rect = document.querySelector("canvas.arena").getBoundingClientRect(); state.aimX = e.clientX - rect.left; state.aimY = e.clientY - rect.top; });
     // Pointer/mouse shooting handling
-    addEventListener("mousedown", (e) => { if (e.button===0) state.shoot = true; if (e.button===2) { state.melee = true; e.preventDefault(); } });
-    addEventListener("mouseup", (e) => { if (e.button===0) state.shoot = false; if (e.button===2) { state.melee = false; e.preventDefault(); } });
+    addEventListener("mousedown", (e) => {
+      if (isUiTarget(e.target)) return;
+      if (e.button===0) state.shoot = true;
+      if (e.button===2) { state.melee = true; e.preventDefault(); }
+    }, { capture: true });
+    addEventListener("mouseup", (e) => {
+      if (e.button===0) state.shoot = false;
+      if (e.button===2) { state.melee = false; e.preventDefault(); }
+    }, { capture: true });
     // prevent context menu on canvas for right-click melee
     document.addEventListener('contextmenu', (e) => {
       const c = document.querySelector('canvas.arena');
@@ -296,64 +313,57 @@ export function toast(msg, ms=5000) { // time = 5000ms = 5s
 }
 
 // Upgrade Testing Functionality
-export function initUpgradeTesting(ws, gameState) {
-  console.log('initUpgradeTesting called with gameState:', gameState);
-  
+export function initUpgradeTesting(ws, initialGameState) {
   const upgradeTestPanel = document.getElementById("upgradeTestPanel");
   const upgradeTestList = document.getElementById("upgradeTestList");
-  const upgradeSearch = document.getElementById("upgradeSearch");
 
-  console.log('DOM elements found:', {
-    upgradeTestPanel: !!upgradeTestPanel,
-    upgradeTestList: !!upgradeTestList,
-    upgradeSearch: !!upgradeSearch
-  });
-
-  if (!upgradeTestPanel || !upgradeTestList || !upgradeSearch) {
+  if (!upgradeTestPanel || !upgradeTestList) {
     console.warn('Missing DOM elements for upgrade testing');
     return null;
   }
 
+  let socket = ws;
+  let gameState = initialGameState || {};
   let ALL_UPGRADES = [];
   let currentUpgrades = {};
+
+  let panelVisible = false;
 
   // Fetch upgrades from server
   async function loadUpgrades() {
     try {
       const response = await fetch('/upgrades');
-      if (response.ok) {
-        ALL_UPGRADES = await response.json();
-        if (gameState && gameState.gameMode === 'testing') {
-          populateUpgradeList();
-        }
-      }
+      if (!response.ok) return;
+      ALL_UPGRADES = await response.json();
+      if (panelVisible) populateUpgradeList();
     } catch (error) {
       console.error('Failed to load upgrades:', error);
     }
   }
 
   async function updateVisibility() {
-    console.log('updateVisibility called, gameState:', gameState);
-    console.log('gameMode check:', gameState && gameState.gameMode === 'testing');
-    
-    if (gameState && gameState.gameMode === 'testing') {
-      console.log('Showing upgrade test panel');
-      upgradeTestPanel.style.display = 'block';
-      if (ALL_UPGRADES.length === 0) {
-        console.log('Loading upgrades...');
-        await loadUpgrades();
+    const shouldShow = gameState?.gameMode === 'testing';
+    if (shouldShow) {
+      if (!panelVisible) {
+        upgradeTestPanel.style.display = 'block';
+        panelVisible = true;
+        if (ALL_UPGRADES.length === 0) {
+          await loadUpgrades();
+        } else {
+          populateUpgradeList();
+        }
+      } else {
+        refreshCountsFromState();
       }
-      populateUpgradeList();
-      setupSearchFilter();
-    } else {
-      console.log('Hiding upgrade test panel, gameMode:', gameState?.gameMode);
+    } else if (panelVisible) {
       upgradeTestPanel.style.display = 'none';
+      panelVisible = false;
     }
   }
 
   function populateUpgradeList() {
     upgradeTestList.innerHTML = '';
-    
+
     ALL_UPGRADES.forEach(upgrade => {
       const count = currentUpgrades[upgrade.id] || 0;
       const item = createUpgradeItem(upgrade, count);
@@ -393,8 +403,9 @@ export function initUpgradeTesting(ws, gameState) {
       if (currentUpgrades[upgrade.id] > 0) {
         removeUpgrade(upgrade.id);
         currentUpgrades[upgrade.id]--;
-        countEl.textContent = currentUpgrades[upgrade.id];
-        if (currentUpgrades[upgrade.id] === 0) {
+        const nextCount = currentUpgrades[upgrade.id] || 0;
+        countEl.textContent = nextCount;
+        if (nextCount === 0) {
           removeBtn.disabled = true;
         }
       }
@@ -403,39 +414,25 @@ export function initUpgradeTesting(ws, gameState) {
     return item;
   }
 
-  function setupSearchFilter() {
-    upgradeSearch.addEventListener('input', (e) => {
-      const searchTerm = e.target.value.toLowerCase();
-      const items = upgradeTestList.querySelectorAll('.upgrade-test-item');
-      
-      items.forEach(item => {
-        const name = item.querySelector('.upgrade-test-name').textContent.toLowerCase();
-        const desc = item.querySelector('.upgrade-test-desc').textContent.toLowerCase();
-        const matches = name.includes(searchTerm) || desc.includes(searchTerm);
-        item.style.display = matches ? 'flex' : 'none';
-      });
-    });
-  }
-
   function applyUpgrade(upgradeId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not connected');
       return;
     }
 
-    ws.send(JSON.stringify({
+    socket.send(JSON.stringify({
       type: 'apply_upgrade_test',
       upgradeId: upgradeId
     }));
   }
 
   function removeUpgrade(upgradeId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not connected');
       return;
     }
 
-    ws.send(JSON.stringify({
+    socket.send(JSON.stringify({
       type: 'remove_upgrade_test',
       upgradeId: upgradeId
     }));
@@ -446,12 +443,76 @@ export function initUpgradeTesting(ws, gameState) {
     populateUpgradeList();
   }
 
+  function setGameState(nextState) {
+    if (!nextState) {
+      gameState = {};
+    } else if (typeof nextState === 'string') {
+      gameState = { gameMode: nextState };
+    } else {
+      gameState = nextState;
+    }
+    updateVisibility();
+  }
+
+  function setGameMode(nextMode) {
+    setGameState({ ...gameState, gameMode: nextMode });
+  }
+
+  function syncWithMods(mods) {
+    if (!Array.isArray(mods)) return;
+    let changed = false;
+    const next = {};
+    const seen = new Set();
+    for (const mod of mods) {
+      if (!mod || !mod.id) continue;
+      const stacks = Number(mod.stacks) || 0;
+      next[mod.id] = stacks;
+      seen.add(mod.id);
+      if ((currentUpgrades[mod.id] || 0) !== stacks) {
+        currentUpgrades[mod.id] = stacks;
+        changed = true;
+      }
+    }
+    for (const id of Object.keys(currentUpgrades)) {
+      if (!seen.has(id) && currentUpgrades[id] !== 0) {
+        currentUpgrades[id] = 0;
+        changed = true;
+      }
+    }
+    if (changed && panelVisible) {
+      refreshCountsFromState();
+    }
+  }
+
+  function refreshCountsFromState() {
+    const items = upgradeTestList.querySelectorAll('.upgrade-test-item');
+    items.forEach((item) => {
+      const id = item.dataset.upgradeId;
+      if (!id) return;
+      const countEl = item.querySelector('.upgrade-test-count');
+      const removeBtn = item.querySelector('[data-action="remove"]');
+      const count = currentUpgrades[id] || 0;
+      if (countEl) countEl.textContent = count;
+      if (removeBtn) {
+        removeBtn.disabled = count === 0;
+      }
+    });
+  }
+
+  function setWebSocket(nextWs) {
+    socket = nextWs;
+  }
+
   // Initial load
   updateVisibility();
 
   return {
     updateVisibility,
     resetUpgrades,
-    loadUpgrades
+    loadUpgrades,
+    setGameState,
+    setGameMode,
+    syncWithMods,
+    setWebSocket
   };
 }

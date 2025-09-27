@@ -763,11 +763,10 @@ export class RoomDO {
           break;
         }
         case "apply_upgrade_test": {
-          // Testing mode only - apply upgrade directly
-          if (this.cfg.gameMode !== 'testing') return;
+          // Allow streamer to apply upgrades via testing panel
           const p = this.players.get(pid);
           if (!p || p.role !== 'streamer') return;
-          
+
           const upgradeId = msg.upgradeId;
           if (upgradeId && typeof upgradeId === 'string') {
             this.applyUpgrade(pid, upgradeId as any);
@@ -775,20 +774,21 @@ export class RoomDO {
           break;
         }
         case "remove_upgrade_test": {
-          // Testing mode only - remove upgrade stack
-          if (this.cfg.gameMode !== 'testing') return;
+          // Allow streamer to remove stacks via testing panel
           const p = this.players.get(pid);
           if (!p || p.role !== 'streamer') return;
-          
+
           const upgradeId = msg.upgradeId;
-          if (upgradeId && typeof upgradeId === 'string' && p.upgrades?.[upgradeId]) {
-            if (p.upgrades[upgradeId] > 1) {
-              p.upgrades[upgradeId]--;
+          if (upgradeId && typeof upgradeId === 'string' && p.mods?.[upgradeId as keyof typeof p.mods]) {
+            const current = (p.mods[upgradeId as keyof typeof p.mods] as number) || 0;
+            if (current > 1) {
+              (p.mods as any)[upgradeId] = current - 1;
             } else {
-              delete p.upgrades[upgradeId];
+              delete (p.mods as any)[upgradeId];
             }
             // Recalculate stats
             p.stats = statsFor(p).s;
+            this.broadcastState();
           }
           break;
         }

@@ -183,13 +183,8 @@
         <!-- Testing Mode Upgrade Panel -->
         <div class="card" id="upgradeTestPanel" style="display: none;">
           <div class="card-title">🧪 Testing Upgrades</div>
-          <div class="upgrade-test-controls">
-            <div class="upgrade-search">
-              <input type="text" id="upgradeSearch" placeholder="Search upgrades..." class="mono" style="width: 100%; margin-bottom: 8px;">
-            </div>
-            <div class="upgrade-list" id="upgradeTestList" style="max-height: 400px; overflow-y: auto;">
-              <!-- Upgrades will be populated here -->
-            </div>
+          <div class="upgrade-list" id="upgradeTestList" style="max-height: 400px; overflow-y: auto;">
+            <!-- Upgrades will be populated here -->
           </div>
         </div>
 
@@ -442,19 +437,24 @@
 
       // Function to update testing mode
       function updateTestingMode(gameMode) {
-        console.log('updateTestingMode called with:', gameMode);
-        console.log('upgradeTestingAPI exists:', !!upgradeTestingAPI);
-        
+        window.gameState = { ...(window.gameState || {}), gameMode };
         if (!upgradeTestingAPI) {
-          console.log('Initializing upgrade testing API...');
           upgradeTestingAPI = initUpgradeTesting(ws, { gameMode });
-          console.log('Upgrade testing API initialized:', !!upgradeTestingAPI);
+          if (upgradeTestingAPI) {
+            window.upgradeTestingAPI = upgradeTestingAPI;
+            upgradeTestingAPI.setWebSocket?.(ws);
+          } else {
+            console.warn('Failed to initialize upgrade testing API');
+          }
+          return;
         }
-        if (upgradeTestingAPI) {
-          console.log('Calling updateVisibility...');
+        upgradeTestingAPI.setWebSocket?.(ws);
+        if (upgradeTestingAPI.setGameMode) {
+          upgradeTestingAPI.setGameMode(gameMode);
+        } else if (upgradeTestingAPI.setGameState) {
+          upgradeTestingAPI.setGameState({ ...(window.gameState || {}), gameMode });
+        } else if (upgradeTestingAPI.updateVisibility) {
           upgradeTestingAPI.updateVisibility();
-        } else {
-          console.warn('Failed to initialize upgrade testing API');
         }
       }
 
@@ -1221,6 +1221,9 @@
       function renderBuffs(mods) {
         if (!buffListEl) return;
         buffListEl.innerHTML = "";
+        if (window.upgradeTestingAPI && typeof window.upgradeTestingAPI.syncWithMods === 'function') {
+          window.upgradeTestingAPI.syncWithMods(mods);
+        }
         const data = Array.isArray(mods)
           ? mods.slice()
           : Object.entries(mods || {}).map(([id, stacks]) => ({ id, stacks }));
@@ -1293,6 +1296,7 @@
         };
 
         ws = connect(roomId);
+        window.ws = ws;
         ws.addEventListener("open", () => {
           status.textContent = "connected";
           status.dataset.state = "connected";
@@ -1361,7 +1365,7 @@
           // Update testing mode when game state changes
           if (msg.type === 'game_state' || msg.type === 'round_restart' || msg.type === 'state') {
             const gameMode = msg.gameMode || state.gameMode || 'normal';
-            console.log('Detected game mode:', gameMode, 'from message type:', msg.type);
+            // console.log('Detected game mode:', gameMode, 'from message type:', msg.type);
             updateTestingMode(gameMode);
           }
           if (msg.type === "state") {

@@ -55,6 +55,8 @@ export function applyUpgrade(ctx: RoomDO, playerId: string, id: ModId) {
   p.mods = p.mods || {};
   const prev = (p.mods[id] || 0) as number;
   (p.mods as any)[id] = prev + 1;
+  p.stats = statsFor(p).s;
   ctx.broadcast('notice', { message: `${p.name} chose ${String(id).replace(/_/g,' ')}` });
+  ctx.broadcastState();
 
 }
