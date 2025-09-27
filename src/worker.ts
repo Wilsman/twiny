@@ -72,20 +72,24 @@ export default {
       return new Response(JSON.stringify({ roomId }), { headers: { "content-type": "application/json" } });
     }
 
-    // Streamer page - create a new room and redirect to it
-    if (url.pathname === "/streamer") {
-      const roomId = await createNewRoom(req);
-      return Response.redirect(`${url.protocol}//${url.host}/streamer.html?room=${roomId}`, 302);
+    // Upgrades API endpoint
+    if (url.pathname === "/upgrades") {
+      const { MODS } = await import("./upgrades");
+      // Return only the data needed for the client
+      const clientMods = MODS.map(mod => ({
+        id: mod.id,
+        name: mod.name,
+        rarity: mod.rarity,
+        desc: mod.desc,
+        maxStacks: mod.maxStacks
+      }));
+      return Response.json(clientMods);
     }
-
-    // Simple health
-    if (url.pathname === "/health") return new Response("ok");
 
     return new Response("Not found", { status: 404 });
   },
 };
 
-// Required for binding discovery in some setups
 // Get region hint from CF headers or fallback
 function getRegionFromRequest(req: Request): string {
   // Cloudflare provides colo (data center) in CF-Ray header

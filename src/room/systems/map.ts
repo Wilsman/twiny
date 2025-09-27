@@ -1,6 +1,12 @@
 import type { RoomDO } from '../index';
+import type { TestOverlap, TestOverlapType } from '../room-types';
 
 export function generateTileMapAndWalls(ctx: RoomDO) {
+  // Check if we're in testing mode
+  if (ctx.cfg.gameMode === 'testing') {
+    generateTestingMap(ctx);
+    return;
+  }
   const size = ctx.cfg.tiles.size;
   const gw = Math.max(10, Math.floor(ctx.W / size));
   const gh = Math.max(8, Math.floor(ctx.H / size));
@@ -287,6 +293,12 @@ export function generateTileMapAndWalls(ctx: RoomDO) {
 }
 
 export function spawnInRandomRoom(ctx: RoomDO) {
+  // In testing mode, spawn near the test overlaps
+  if (ctx.cfg.gameMode === 'testing' && ctx.testOverlaps.length > 0) {
+    // Spawn to the left of the first overlap row for easy access
+    return { x: 150, y: 200 };
+  }
+  
   // Spawn within a random room
   if (!ctx.map || ctx.map.rooms.length === 0) {
     // Fallback to center if no rooms available
@@ -326,4 +338,106 @@ export function randomFreePos(ctx: RoomDO, buffer = 24) {
   }
   return null;
 
+}
+
+export function generateTestingMap(ctx: RoomDO) {
+  const size = ctx.cfg.tiles.size;
+  const gw = Math.max(10, Math.floor(ctx.W / size));
+  const gh = Math.max(8, Math.floor(ctx.H / size));
+  const theme: 'dungeon'|'cave'|'lab' = 'lab'; // Use lab theme for testing
+  
+  // Create empty map (all floor tiles)
+  const tiles = new Uint8Array(gw * gh);
+  tiles.fill(0); // All floor tiles
+  
+  // Add border walls
+  for (let i = 0; i < gw; i++) {
+    tiles[0 * gw + i] = 1; // Top border
+    tiles[(gh - 1) * gw + i] = 1; // Bottom border
+  }
+  for (let j = 0; j < gh; j++) {
+    tiles[j * gw + 0] = 1; // Left border
+    tiles[j * gw + (gw - 1)] = 1; // Right border
+  }
+  
+  // Create a single large room for testing
+  const rooms = [{ x: 1, y: 1, w: gw - 2, h: gh - 2 }];
+  
+  // Minimal props and lights for clean testing environment
+  const props: {x:number;y:number;type:'crate'|'pillar'|'bonepile'}[] = [];
+  const lights: {x:number;y:number;r:number;a:number}[] = [
+    { x: gw / 2, y: gh / 2, r: 15, a: 0.3 } // Central light
+  ];
+  
+  ctx.map = { w: gw, h: gh, size, theme, tiles, props, lights, rooms };
+  ctx.walls = ctx.greedyRectsFromTiles(tiles, gw, gh, size);
+  
+  // Generate test overlaps
+  generateTestOverlaps(ctx);
+  
+  ctx.mapReady = true;
+}
+
+function generateTestOverlaps(ctx: RoomDO) {
+  const overlaps: TestOverlap[] = [];
+  const gridCols = 8; // More columns for a line layout
+  const gridRows = 2; // Fewer rows for cleaner layout
+  const startX = 300;
+  const startY = 200;
+  const spacingX = 250;
+  const spacingY = 200;
+  
+  // Define test overlap configurations
+  const overlapConfigs: Array<{
+    type: TestOverlapType;
+    label: string;
+    color: string;
+    cooldownMs: number;
+  }> = [
+    // Weapons
+    { type: 'spawn_smg', label: 'Spawn SMG', color: '#4CAF50', cooldownMs: 1000 },
+    { type: 'spawn_shotgun', label: 'Spawn Shotgun', color: '#FF9800', cooldownMs: 1000 },
+    { type: 'spawn_railgun', label: 'Spawn Railgun', color: '#9C27B0', cooldownMs: 1000 },
+    { type: 'spawn_flamethrower', label: 'Spawn Flamethrower', color: '#F44336', cooldownMs: 1000 },
+    
+    // Pickups
+    { type: 'spawn_health', label: 'Spawn Health', color: '#E91E63', cooldownMs: 500 },
+    { type: 'spawn_ammo', label: 'Spawn Ammo', color: '#607D8B', cooldownMs: 500 },
+    { type: 'spawn_shield', label: 'Spawn Shield', color: '#03A9F4', cooldownMs: 1000 },
+    { type: 'spawn_speed', label: 'Spawn Speed', color: '#8BC34A', cooldownMs: 1000 },
+    
+    // Zombies
+    { type: 'spawn_zombie_runner', label: 'Spawn Runner', color: '#795548', cooldownMs: 2000 },
+    { type: 'spawn_zombie_brute', label: 'Spawn Brute', color: '#424242', cooldownMs: 3000 },
+    { type: 'spawn_zombie_spitter', label: 'Spawn Spitter', color: '#689F38', cooldownMs: 3000 },
+    { type: 'spawn_zombie_stalker', label: 'Spawn Stalker', color: '#5E35B1', cooldownMs: 3000 },
+    { type: 'spawn_zombie_bomber', label: 'Spawn Bomber', color: '#D32F2F', cooldownMs: 4000 },
+    
+    // Bosses
+    { type: 'spawn_boss_necromancer', label: 'Spawn Necromancer', color: '#4A0E4E', cooldownMs: 10000 },
+    { type: 'spawn_boss_brute_king', label: 'Spawn Brute King', color: '#8B0000', cooldownMs: 10000 },
+    { type: 'spawn_boss_shadow_lord', label: 'Spawn Shadow Lord', color: '#2F2F2F', cooldownMs: 10000 },
+  ];
+  
+  // Generate overlaps in grid layout
+  for (let i = 0; i < overlapConfigs.length && i < gridCols * gridRows; i++) {
+    const config = overlapConfigs[i];
+    const col = i % gridCols;
+    const row = Math.floor(i / gridCols);
+    
+    const overlap: TestOverlap = {
+      id: crypto.randomUUID().slice(0, 8),
+      type: config.type,
+      x: startX + col * spacingX,
+      y: startY + row * spacingY,
+      radius: 40,
+      label: config.label,
+      color: config.color,
+      cooldownMs: config.cooldownMs,
+    };
+    
+    overlaps.push(overlap);
+  }
+  
+  ctx.testOverlaps = overlaps;
 }

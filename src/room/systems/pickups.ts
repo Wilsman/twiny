@@ -3,6 +3,11 @@ import type { PickupType } from '../room-types';
 
 
 export function checkPickupSpawning(ctx: RoomDO) {
+  // Skip automatic pickup spawning in testing mode
+  if (ctx.cfg.gameMode === 'testing') {
+    return;
+  }
+  
   const now = Date.now();
   if (now - ctx.lastPickupSpawn > ctx.pickupIntervalMs) {
     ctx.lastPickupSpawn = now;

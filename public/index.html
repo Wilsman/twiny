@@ -212,7 +212,29 @@
       if (!(t instanceof HTMLElement)) return;
       if (t.matches('#ctaStreamer')) { e.preventDefault(); showRoleModal('streamer'); }
       if (t.matches('#ctaZombie')) { e.preventDefault(); showRoleModal('zombie'); }
+      if (t.matches('#ctaTestingMode')) { e.preventDefault(); createTestingRoom(); }
     });
+
+    // Create testing room function
+    const createTestingRoom = async () => {
+      try {
+        const overrides = { gameMode: 'testing' };
+        const res = await fetch('/create', { 
+          method: 'POST', 
+          headers: { 'content-type': 'application/json' }, 
+          body: JSON.stringify({ overrides }) 
+        });
+        const data = await res.json();
+        if (data && data.roomId) { 
+          window.location.href = `/streamer.html?room=${encodeURIComponent(data.roomId)}`;
+          return;
+        }
+      } catch (error) {
+        console.error('Error creating testing room:', error);
+      }
+      // Fallback
+      window.location.href = '/streamer.html';
+    };
 
     // Smooth scroll to How To Play
     const scrollBtn = document.getElementById('scrollDown');
@@ -234,6 +256,7 @@
     <div class="right-controls">
       <button class="primary" id="ctaStreamer">Streamer</button>
       <button id="ctaZombie">Join</button>
+      <button id="ctaTestingMode" title="Create a testing room with spawn overlaps">Testing Mode</button>
     </div>
   </div>
   <div class="hero">
@@ -246,6 +269,9 @@
       <div class="cta">
         <button class="btn-xl primary" id="ctaStreamer">Play as Streamer</button>
         <button class="btn-xl secondary" id="ctaZombie">Join as Zombie</button>
+      </div>
+      <div class="cta">
+        <button class="btn-xl primary" id="ctaTestingMode" title="Create a testing room with spawn overlaps">Testing Level</button>
       </div>
     </div>
     <button id="scrollDown" class="down-cta" aria-label="Scroll to How To Play">

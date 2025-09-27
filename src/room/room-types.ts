@@ -162,6 +162,36 @@ export interface AIZombie {
   fuseUntil?: number;
 }
 
+export type TestOverlapType = 
+  | 'spawn_smg'
+  | 'spawn_shotgun' 
+  | 'spawn_railgun'
+  | 'spawn_flamethrower'
+  | 'spawn_health'
+  | 'spawn_ammo'
+  | 'spawn_shield'
+  | 'spawn_speed'
+  | 'spawn_zombie_runner'
+  | 'spawn_zombie_brute'
+  | 'spawn_zombie_spitter'
+  | 'spawn_zombie_stalker'
+  | 'spawn_zombie_bomber'
+  | 'spawn_boss_necromancer'
+  | 'spawn_boss_brute_king'
+  | 'spawn_boss_shadow_lord';
+
+export interface TestOverlap {
+  id: string;
+  type: TestOverlapType;
+  x: number;
+  y: number;
+  radius: number;
+  label: string;
+  color: string;
+  lastTriggered?: number;
+  cooldownMs: number;
+}
+
 
 
 

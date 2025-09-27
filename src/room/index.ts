@@ -42,6 +42,8 @@ import type {
   AIZombie,
   Extraction,
   WeaponDrop,
+  TestOverlap,
+  TestOverlapType,
 } from "./room-types";
 
 type Bullet = ActiveBullet;
@@ -123,6 +125,7 @@ import {
   randomName as randomNameImpl,
 } from "./utils/names";
 import { updateElementalTrails as updateElementalTrailsImpl } from "./systems/elemental-trails";
+import { checkTestOverlapInteractions as checkTestOverlapInteractionsImpl } from "./systems/test-overlaps";
 
 export class RoomDO {
   state: DurableObjectState;
@@ -183,6 +186,9 @@ export class RoomDO {
     props: { x: number; y: number; type: "crate" | "pillar" | "bonepile" }[];
     rooms: { x: number; y: number; w: number; h: number }[];
   } | null = null;
+
+  // Testing mode overlaps
+  testOverlaps: TestOverlap[] = [];
 
   // Loop - Different tick rates for different systems
   tickMs = CONFIG.ticks.mainMs; // updated when cfg changes
@@ -596,7 +602,16 @@ export class RoomDO {
     });
 
     this.startLoop();
-    this.beginRoundCountdown();
+    
+    // Skip countdown in testing mode
+    if (this.cfg.gameMode === 'testing') {
+      this.roundActive = true;
+      this.roundEndTime = Date.now() + this.roundDurationMs;
+      this.broadcast("round_countdown", { seconds: 0 });
+      this.broadcastState();
+    } else {
+      this.beginRoundCountdown();
+    }
   }
 
   onMessage(ws: WebSocket, pid: string, ev: MessageEvent) {
@@ -744,6 +759,36 @@ export class RoomDO {
             !this.countdownActive
           ) {
             this.restartRound();
+          }
+          break;
+        }
+        case "apply_upgrade_test": {
+          // Testing mode only - apply upgrade directly
+          if (this.cfg.gameMode !== 'testing') return;
+          const p = this.players.get(pid);
+          if (!p || p.role !== 'streamer') return;
+          
+          const upgradeId = msg.upgradeId;
+          if (upgradeId && typeof upgradeId === 'string') {
+            this.applyUpgrade(pid, upgradeId as any);
+          }
+          break;
+        }
+        case "remove_upgrade_test": {
+          // Testing mode only - remove upgrade stack
+          if (this.cfg.gameMode !== 'testing') return;
+          const p = this.players.get(pid);
+          if (!p || p.role !== 'streamer') return;
+          
+          const upgradeId = msg.upgradeId;
+          if (upgradeId && typeof upgradeId === 'string' && p.upgrades?.[upgradeId]) {
+            if (p.upgrades[upgradeId] > 1) {
+              p.upgrades[upgradeId]--;
+            } else {
+              delete p.upgrades[upgradeId];
+            }
+            // Recalculate stats
+            p.stats = statsFor(p).s;
           }
           break;
         }
@@ -966,6 +1011,10 @@ export class RoomDO {
 
   applyUpgrade(playerId: string, id: ModId) {
     return applyUpgradeImpl(this, playerId, id);
+  }
+
+  checkTestOverlapInteractions(now: number) {
+    return checkTestOverlapInteractionsImpl(this, now);
   }
 
   publicPlayer = (p: Player) => ({

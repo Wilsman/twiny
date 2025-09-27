@@ -97,18 +97,35 @@ export function update(ctx: RoomDO) {
     ctx.updateAIZombies(now);
   }
 
-  // Spawn AI Zombies if needed (skip if upgrade paused)
-  if (!upgradePaused) {
+  // Spawn AI Zombies if needed (skip if upgrade paused or in testing mode)
+  if (!upgradePaused && ctx.cfg.gameMode !== 'testing') {
     ctx.spawnAIZombiesIfNeeded(now);
   }
 
-  // Update Boss System (skip movement if upgrade paused)
-  ctx.updateBossSystem(now);
+  // Update Boss System (skip movement if upgrade paused, disable auto-spawning in testing mode)
+  if (ctx.cfg.gameMode !== 'testing') {
+    ctx.updateBossSystem(now);
+  } else {
+    // In testing mode, only update existing bosses, don't spawn new ones
+    for (let i = ctx.bosses.length - 1; i >= 0; i--) {
+      const boss = ctx.bosses[i];
+      ctx.updateBoss(boss, now);
+      
+      // Remove dead bosses
+      if (boss.hp <= 0 && boss.state === "dying") {
+        ctx.onBossDeath(boss);
+        ctx.bosses.splice(i, 1);
+      }
+    }
+  }
 
   // Update Boss Minions (skip if upgrade paused)
   if (!upgradePaused) {
     ctx.updateBossMinions(now);
   }
+
+  // Check test overlap interactions (testing mode only)
+  ctx.checkTestOverlapInteractions(now);
 
   // Update Poison Fields
   ctx.updatePoisonFields(now);

@@ -294,3 +294,164 @@ export function toast(msg, ms=5000) { // time = 5000ms = 5s
   clearTimeout(t._hide);
   t._hide = setTimeout(()=>t.classList.remove('show'), ms);
 }
+
+// Upgrade Testing Functionality
+export function initUpgradeTesting(ws, gameState) {
+  console.log('initUpgradeTesting called with gameState:', gameState);
+  
+  const upgradeTestPanel = document.getElementById("upgradeTestPanel");
+  const upgradeTestList = document.getElementById("upgradeTestList");
+  const upgradeSearch = document.getElementById("upgradeSearch");
+
+  console.log('DOM elements found:', {
+    upgradeTestPanel: !!upgradeTestPanel,
+    upgradeTestList: !!upgradeTestList,
+    upgradeSearch: !!upgradeSearch
+  });
+
+  if (!upgradeTestPanel || !upgradeTestList || !upgradeSearch) {
+    console.warn('Missing DOM elements for upgrade testing');
+    return null;
+  }
+
+  let ALL_UPGRADES = [];
+  let currentUpgrades = {};
+
+  // Fetch upgrades from server
+  async function loadUpgrades() {
+    try {
+      const response = await fetch('/upgrades');
+      if (response.ok) {
+        ALL_UPGRADES = await response.json();
+        if (gameState && gameState.gameMode === 'testing') {
+          populateUpgradeList();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load upgrades:', error);
+    }
+  }
+
+  async function updateVisibility() {
+    console.log('updateVisibility called, gameState:', gameState);
+    console.log('gameMode check:', gameState && gameState.gameMode === 'testing');
+    
+    if (gameState && gameState.gameMode === 'testing') {
+      console.log('Showing upgrade test panel');
+      upgradeTestPanel.style.display = 'block';
+      if (ALL_UPGRADES.length === 0) {
+        console.log('Loading upgrades...');
+        await loadUpgrades();
+      }
+      populateUpgradeList();
+      setupSearchFilter();
+    } else {
+      console.log('Hiding upgrade test panel, gameMode:', gameState?.gameMode);
+      upgradeTestPanel.style.display = 'none';
+    }
+  }
+
+  function populateUpgradeList() {
+    upgradeTestList.innerHTML = '';
+    
+    ALL_UPGRADES.forEach(upgrade => {
+      const count = currentUpgrades[upgrade.id] || 0;
+      const item = createUpgradeItem(upgrade, count);
+      upgradeTestList.appendChild(item);
+    });
+  }
+
+  function createUpgradeItem(upgrade, count) {
+    const item = document.createElement('div');
+    item.className = `upgrade-test-item ${upgrade.rarity}`;
+    item.dataset.upgradeId = upgrade.id;
+    
+    item.innerHTML = `
+      <div class="upgrade-test-info">
+        <div class="upgrade-test-name">${upgrade.name}</div>
+        <div class="upgrade-test-desc">${upgrade.desc}</div>
+      </div>
+      <div class="upgrade-test-controls">
+        <button class="upgrade-test-btn" data-action="remove" ${count === 0 ? 'disabled' : ''}>−</button>
+        <div class="upgrade-test-count">${count}</div>
+        <button class="upgrade-test-btn" data-action="add">+</button>
+      </div>
+    `;
+
+    const addBtn = item.querySelector('[data-action="add"]');
+    const removeBtn = item.querySelector('[data-action="remove"]');
+    const countEl = item.querySelector('.upgrade-test-count');
+
+    addBtn.addEventListener('click', () => {
+      applyUpgrade(upgrade.id);
+      currentUpgrades[upgrade.id] = (currentUpgrades[upgrade.id] || 0) + 1;
+      countEl.textContent = currentUpgrades[upgrade.id];
+      removeBtn.disabled = false;
+    });
+
+    removeBtn.addEventListener('click', () => {
+      if (currentUpgrades[upgrade.id] > 0) {
+        removeUpgrade(upgrade.id);
+        currentUpgrades[upgrade.id]--;
+        countEl.textContent = currentUpgrades[upgrade.id];
+        if (currentUpgrades[upgrade.id] === 0) {
+          removeBtn.disabled = true;
+        }
+      }
+    });
+
+    return item;
+  }
+
+  function setupSearchFilter() {
+    upgradeSearch.addEventListener('input', (e) => {
+      const searchTerm = e.target.value.toLowerCase();
+      const items = upgradeTestList.querySelectorAll('.upgrade-test-item');
+      
+      items.forEach(item => {
+        const name = item.querySelector('.upgrade-test-name').textContent.toLowerCase();
+        const desc = item.querySelector('.upgrade-test-desc').textContent.toLowerCase();
+        const matches = name.includes(searchTerm) || desc.includes(searchTerm);
+        item.style.display = matches ? 'flex' : 'none';
+      });
+    });
+  }
+
+  function applyUpgrade(upgradeId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not connected');
+      return;
+    }
+
+    ws.send(JSON.stringify({
+      type: 'apply_upgrade_test',
+      upgradeId: upgradeId
+    }));
+  }
+
+  function removeUpgrade(upgradeId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not connected');
+      return;
+    }
+
+    ws.send(JSON.stringify({
+      type: 'remove_upgrade_test',
+      upgradeId: upgradeId
+    }));
+  }
+
+  function resetUpgrades() {
+    currentUpgrades = {};
+    populateUpgradeList();
+  }
+
+  // Initial load
+  updateVisibility();
+
+  return {
+    updateVisibility,
+    resetUpgrades,
+    loadUpgrades
+  };
+}

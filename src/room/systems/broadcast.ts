@@ -67,7 +67,20 @@ export function broadcastState(ctx: RoomDO) {
       stacks: seg.stacks,
       potency: seg.potency,
     })),
+    testOverlaps: ctx.testOverlaps.map(overlap => ({
+      id: overlap.id,
+      type: overlap.type,
+      x: overlap.x,
+      y: overlap.y,
+      radius: overlap.radius,
+      label: overlap.label,
+      color: overlap.color,
+      cooldownRemaining: overlap.lastTriggered 
+        ? Math.max(0, overlap.cooldownMs - (now - overlap.lastTriggered))
+        : 0
+    })),
     arena: { w: ctx.W, h: ctx.H },
+    gameMode: ctx.cfg.gameMode,
     remainingTime: Math.max(0, Math.floor(((ctx.roundEndTime || Date.now()) - Date.now()) / 1000)),
     countdownRemaining: ctx.countdownActive && ctx.countdownEndsAt
       ? Math.max(0, Math.ceil((ctx.countdownEndsAt - Date.now()) / 1000))
